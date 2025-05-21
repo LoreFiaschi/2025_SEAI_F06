@@ -16,6 +16,7 @@ from games.gardner.GardnerMiniChessGame import GardnerMiniChessGame
 Move = Tuple[int, int, int]      # (piece, src, dst)
 
 MAX_TURNS = 200
+DRAW_REPETITION = 3
 
 class MiniChessState:
     """
@@ -23,18 +24,19 @@ class MiniChessState:
     È *immutabile* (board e player non cambiano dopo __init__), quindi hashable.
     """
 
-    __slots__ = ("_board", "_player", "_hash", "_turns")
+    __slots__ = ("_board", "_player", "_hash", "_turns", "_history")
 
     N = 5                               # dimensione fissa in Gardner
 
     _game_singleton = GardnerMiniChessGame()     # riusa logica di fine‐partita
 
-    def __init__(self, board, player=1, turns=0):
+    def __init__(self, board, player=1, turns=0, history: Tuple[int, ...] = (),):
         # salva come tupla‑di‑tuple: immutabile & hashable
         self._board = tuple(tuple(r) for r in board)
         self._player = player
-        self._hash = None
+        self._hash = hash((self._board, self._player))
         self._turns = turns
+        self._history = history + (self._hash,)
 
     def _as_lists(self):
         """Ritorna la board come list[list[int]] (deep‑copy leggera)."""
@@ -51,19 +53,24 @@ class MiniChessState:
     def next_state(self, move):
         b = Board(self.N, self._as_lists())
         b.execute_move(move, self._player)
-        return MiniChessState(b.pieces_without_padding(), -self._player,self._turns + 1)
+        return MiniChessState(b.pieces_without_padding(), -self._player,self._turns + 1, self._history)
 
     def is_terminal(self):
-        return (self._turns >= MAX_TURNS or
-                self._game_singleton.getGameEnded(self._as_lists(), self._player) != 0)
+        return (self._is_threefold() or
+                self._turns >= MAX_TURNS or
+                self._game_singleton.getGameEnded(self._as_lists(), 
+                                                  self._player) != 0)
     
     def result(self):         
         if self._turns >= MAX_TURNS:             
-            return 0  # patta        
+            return 1e-4  # patta   
+        if self._is_threefold():
+            #print(f"RIPETIZIONE MOSSE!")
+            return 1e-4    
         r = self._game_singleton.getGameEnded(self._as_lists(), self._player) 
         if r == 1e-4:   
-            return 0             
-        return -self._player
+            return r             
+        return -self._player # 1e-4 = patta, 0 = in corso, 1 = vittoria, -1 = sconfitta
     # ---------------- hashing & equality ----------------------------------
 
     def __hash__(self) -> int:
@@ -88,3 +95,7 @@ class MiniChessState:
         b = Board(self.N, [list(r) for r in self._board])
         b.display(self._player)
         return ""
+    
+    def _is_threefold(self) -> bool:
+        """True se la posizione corrente (board + side-to-move) è apparsa ≥ 3 volte."""
+        return self._history.count(self._hash) >= 3

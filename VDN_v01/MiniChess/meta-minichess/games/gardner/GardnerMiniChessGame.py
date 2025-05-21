@@ -17,13 +17,13 @@ class GardnerMiniChessGame(Game):
         sys.setrecursionlimit(GardnerMiniChessGame.RECURSION_LIMIT)
         b = Board(self.n,[
             
-            #[-Board.ROOK, -Board.KNIGHT, -Board.BISHOP, -Board.QUEEN, -Board.KING],
-            [-Board.BLANK,-Board.BLANK,-Board.KING,-Board.BLANK,-Board.BLANK],
+            [-Board.ROOK, -Board.KNIGHT, -Board.BISHOP, -Board.QUEEN, -Board.KING],
+            #[-Board.BLANK,-Board.BLANK,-Board.KING,-Board.BLANK,-Board.BLANK],
             [-Board.PAWN]*5,
             [Board.BLANK]*5,
             [Board.PAWN]*5,
-            [Board.BLANK,Board.BLANK,Board.KING,Board.BLANK,Board.BLANK]
-            #[Board.ROOK, Board.KNIGHT, Board.BISHOP, Board.QUEEN, Board.KING],
+            #[Board.BLANK,Board.BLANK,Board.KING,Board.BLANK,Board.BLANK]
+            [Board.ROOK, Board.KNIGHT, Board.BISHOP, Board.QUEEN, Board.KING],
         ])
         return b.pieces_without_padding()
  

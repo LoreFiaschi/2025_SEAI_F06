@@ -9,29 +9,43 @@ from games.gardner.minichess_state import MiniChessState, Move
 import torch
 from games.gardner.value_network import ValueNetwork
 
+# --- all’inizio del file (o in un util condiviso) -----------------
+PIECE_TO_IDX = {               # codici definiti in Board
+    100: 0,    # Pawn
+    280: 1,    # Knight
+    320: 2,    # Bishop
+    479: 3,    # Rook
+    929: 4,    # Queen
+    60000: 5,  # King
+}
+N_TYPES = 6                    # numero di tipi di pezzo
+INPUT_CHANNELS = N_TYPES * 2 + 1   # 6 bianchi + 6 neri + turno = 13
+# ------------------------------------------------------------------
 
 def encode_state_as_tensor(state: MiniChessState) -> torch.Tensor:
     """
-    Converte uno stato MiniChessState in un tensore (3, 5, 5):
-      - canale 0: 1 se pezzo bianco, 0 altrimenti
-      - canale 1: 1 se pezzo nero, 0 altrimenti
-      - canale 2: valore +1 o -1 per il turno corrente
-    Ritorna tensor su dispositivo CPU. Il batch dimension verrà aggiunto da MCTS.
+    Ritorna un tensore (13, 5, 5):
+      canali   0-5 : un tipo di pezzo bianco per canale
+      canali   6-11: un tipo di pezzo nero per canale
+      canale      12: intero +1 / -1 per il side-to-move
     """
-    board = state.board()           # tupla-di-tupla 5×5 di int (codici pezzi)
-    player = state.current_player() # +1 o -1
+    board  = state.board()
+    player = state.current_player()
 
-    t = torch.zeros(3, 5, 5, dtype=torch.float32)
-    for i in range(5):
-        for j in range(5):
-            p = board[i][j]
-            if p > 0:
-                t[0, i, j] = 1.0   # pezzo bianco
-            elif p < 0:
-                t[1, i, j] = 1.0   # pezzo nero
-            # se p==0, rimane 0 (cella vuota)
-    t[2, :, :] = float(player)      # canale “turno”
+    t = torch.zeros(INPUT_CHANNELS, 5, 5, dtype=torch.float32)
+    for r in range(5):
+        for c in range(5):
+            p = board[r][c]
+            if p == 0:
+                continue
+            idx = PIECE_TO_IDX[abs(p)]
+            if p > 0:                         # bianco
+                t[idx,        r, c] = 1.0
+            else:                             # nero
+                t[idx+N_TYPES, r, c] = 1.0
+    t[-1, :, :] = float(player)
     return t
+
 
 
 @dataclass(slots=True)
@@ -148,30 +162,27 @@ class MCTS:
         return node
 
     def _simulate(self, state: MiniChessState) -> float:
-        """
-        Valuta uno stato utilizzando la rete di valore:
-        - Se lo stato terminale, restituisce state.result() (±1 o 0)
-        - Altrimenti converte lo stato in (3,5,5) e chiama la rete CNN
-        - Clampa l'output in [-1, +1]
-        """
         if state.is_terminal():
             return float(state.result())
 
-        # Costruisco (1,3,5,5) per la CNN
-        state_tensor = encode_state_as_tensor(state).unsqueeze(0)  # (1,3,5,5)
+        state_tensor = encode_state_as_tensor(state).unsqueeze(0)
         device = next(self.value_net.parameters()).device
         state_tensor = state_tensor.to(device)
 
         with torch.no_grad():
-            raw_v = self.value_net(state_tensor)  # (1,1)
-        v = raw_v.item()
+            raw_v = self.value_net(state_tensor)   # (1, 2) o (1, 1)
 
-        # Clampo in [-1, +1]
-        if v > 1.0:
-            return 1.0
-        if v < -1.0:
-            return -1.0
-        return v
+        # Se la rete è scalar-output, uso l’unico valore
+        if raw_v.shape[-1] == 1:
+            v = raw_v.item()
+        else:
+            v_white, v_black = raw_v[0]            # unpack
+            v = v_white if state.current_player() == 1 else v_black
+            v = v.item()
+
+        # clamp in [-1, +1] (difesa da overshoot numerico)
+        return max(-1.0, min(1.0, v))
+
 
     def _select_move_with_temperature(self, temperature: float) -> Move:
         """
