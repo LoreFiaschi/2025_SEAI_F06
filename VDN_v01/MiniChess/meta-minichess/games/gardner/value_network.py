@@ -1,23 +1,17 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-#from games.gardner.mcts_pt import INPUT_CHANNELS
-
-INPUT_CHANNELS = 13  # 6 bianchi + 6 neri + turno = 13
+from config import INPUT_CHANNELS, HIDDEN_CHANNELS
 
 class ValueNetwork(nn.Module):
     """
-    CNN molto leggera per Gardner MiniChess 5×5.
-
-    Args
-    ----
     hidden_channels : int
         Numero di filtri del primo conv-layer.
     output_dim : int
         Dimensione del vettore di valore in uscita
         (1 = scalar; 2 = [v_white, v_black]).
     """
-    def __init__(self, hidden_channels: int = 32, output_dim: int = 1):
+    def __init__(self, hidden_channels: int = HIDDEN_CHANNELS, output_dim: int = 1):
         super().__init__()
         self.conv1 = nn.Conv2d(INPUT_CHANNELS, hidden_channels, 3, padding=1)
         self.bn1   = nn.BatchNorm2d(hidden_channels)

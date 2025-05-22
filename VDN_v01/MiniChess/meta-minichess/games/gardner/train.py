@@ -21,32 +21,14 @@ from games.gardner.mcts_pt import MCTS, encode_state_as_tensor
 from games.gardner.minichess_state import MiniChessState
 from games.gardner.GardnerMiniChessGame import GardnerMiniChessGame
 
-# ───────────── Costanti per il potenziale materiale ──────────────
-PIECE_VALUES = {
-    100: 0.001,   # pedone
-    280: 0.003,   # cavallo
-    320: 0.003,   # alfiere
-    479: 0.005,   # torre
-    929: 0.011,   # regina
-    60000: 0.0    # re (non conta ai fini del potenziale)
-}
-STEP_COST = 0.0001  # penalità al giocatore di turno per ogni mossa
-ALPHA = 1.0         # scaling dello shaping
-# ────────────────────────────────────────────────────────────────────────────
+# ─── CONFIG.PY ──────────────────────────────────────────────────────────────────────── 
+from config import HIDDEN_CHANNELS, PIECE_VALUES, STEP_COST, ALPHA
+from config import num_cycles, arena_games, games_per_cycle
+from config import max_buffer_size, iterations_MCTS
+from config import learning_rate, weight_decay, batch_size, num_epochs
+from config import DEVICE
+# ──────────────────────────────────────────────────────────────────────────── 
 
-# ---------- Hyper‑parametri globali ----------
-num_cycles        = 50          # cicli self‑play + training
-arena_games       = 100         # partite deterministiche per l'arena
-games_per_cycle   = 20          # partite self‑play per ciclo
-max_buffer_size   = 10_000      # massimo numero di transizioni nel buffer
-iterations_MCTS   = 50         # simulazioni MCTS per mossa
-
-learning_rate   = 5e-3
-weight_decay    = 0.0
-batch_size      = 64
-num_epochs      = 3
-
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Contatore diagnostico per la distribuzione dei risultati finali
 z_counter: Counter = Counter()
@@ -143,7 +125,7 @@ def self_play_game(
         state, phi_prev = next_state, phi_next
         
     # Esito dal punto di vista del Bianco (serve board come LISTA di liste)
-    print(f"\nboard:\n{state}, result = {state.result()}")
+    print(f"\n{state}, result = {state.result()}")
     board_lists = [list(r) for r in state.board()]
     z_w = state.result()   # +1 win W, -1 win B, 0 draw
         
@@ -152,7 +134,7 @@ def self_play_game(
     if(z_w == 1e-4):
         z_b = z_w
     
-    print(f"z_w = {z_w}, z_b = {z_b}")
+    print(f"z_w = {z_w}, z_b = {z_b}\n")
     # Propagazione retrograda dei reward di shaping
     data: List[Tuple[torch.Tensor, float, float]] = []
     cum_w = cum_b = 0.0
@@ -194,8 +176,10 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
         res = play_det(current_net, best_net, mcts_curr, mcts_best)
         if res == 1:
             wins += 1
+            
         elif res == 0:
             draws += 1
+    print(f"current_net con il Bianco: {wins}")
 
     # current_net con il Nero
     for _ in range(games - half):
@@ -204,8 +188,9 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
             wins += 1
         elif res == 0:
             draws += 1
+    print(f"current_net con il Nero: {wins}")
 
-    return wins / games
+    return wins / (games-draws)  # percentuale di vittorie del current_net
 
 
 # ---------- Training della rete di valore ----------
@@ -214,7 +199,7 @@ def train_value_net(
     value_net: torch.nn.Module,
     train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
-    num_epochs: int = 3,
+    num_epochs: int = num_epochs,
     device: str = DEVICE,
 ) -> float:
     value_net.train()
@@ -238,14 +223,14 @@ def train_value_net(
 
 if __name__ == "__main__":
     # Primo checkpoint casuale
-    best_net = ValueNetwork(hidden_channels=32, output_dim=2).to(DEVICE)
+    best_net = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=2).to(DEVICE)
     save_ckpt(best_net, "best_0")
 
     for cycle in range(1, num_cycles + 1):
         print(f"\n===== GENERAZIONE {cycle} =====")
 
         # Clone del best per iniziare l'apprendimento
-        current_net = ValueNetwork(hidden_channels=32, output_dim=2).to(DEVICE)
+        current_net = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=2).to(DEVICE)
         current_net.load_state_dict(best_net.state_dict())
         optimizer = torch.optim.Adam(current_net.parameters(), lr=learning_rate, weight_decay=weight_decay)
 

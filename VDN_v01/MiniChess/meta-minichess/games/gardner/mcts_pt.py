@@ -8,19 +8,8 @@ from typing import List, Optional, Dict
 from games.gardner.minichess_state import MiniChessState, Move
 import torch
 from games.gardner.value_network import ValueNetwork
+from config import PIECE_TO_IDX, N_TYPES, INPUT_CHANNELS
 
-# --- all’inizio del file (o in un util condiviso) -----------------
-PIECE_TO_IDX = {               # codici definiti in Board
-    100: 0,    # Pawn
-    280: 1,    # Knight
-    320: 2,    # Bishop
-    479: 3,    # Rook
-    929: 4,    # Queen
-    60000: 5,  # King
-}
-N_TYPES = 6                    # numero di tipi di pezzo
-INPUT_CHANNELS = N_TYPES * 2 + 1   # 6 bianchi + 6 neri + turno = 13
-# ------------------------------------------------------------------
 
 def encode_state_as_tensor(state: MiniChessState) -> torch.Tensor:
     """

@@ -12,11 +12,11 @@ if project_root not in sys.path:
 
 from games.gardner.GardnerMiniChessLogic import Board
 from games.gardner.GardnerMiniChessGame import GardnerMiniChessGame
+from config import MAX_TURNS, DRAW_REPETITION, REWARD_DRAW
 
 Move = Tuple[int, int, int]      # (piece, src, dst)
 
-MAX_TURNS = 200
-DRAW_REPETITION = 3
+
 
 class MiniChessState:
     """
@@ -63,12 +63,12 @@ class MiniChessState:
     
     def result(self):         
         if self._turns >= MAX_TURNS:             
-            return 1e-4  # patta   
+            return REWARD_DRAW  # patta   
         if self._is_threefold():
             #print(f"RIPETIZIONE MOSSE!")
-            return 1e-4    
+            return REWARD_DRAW    
         r = self._game_singleton.getGameEnded(self._as_lists(), self._player) 
-        if r == 1e-4:   
+        if r == REWARD_DRAW:   
             return r             
         return -self._player # 1e-4 = patta, 0 = in corso, 1 = vittoria, -1 = sconfitta
     # ---------------- hashing & equality ----------------------------------
@@ -98,4 +98,4 @@ class MiniChessState:
     
     def _is_threefold(self) -> bool:
         """True se la posizione corrente (board + side-to-move) è apparsa ≥ 3 volte."""
-        return self._history.count(self._hash) >= 3
+        return self._history.count(self._hash) >= DRAW_REPETITION
