@@ -126,7 +126,7 @@ def self_play_game(
         
     # Esito dal punto di vista del Bianco (serve board come LISTA di liste)
     print(f"\n{state}, result = {state.result()}")
-    board_lists = [list(r) for r in state.board()]
+   #board_lists = [list(r) for r in state.board()]
     z_w = state.result()   # +1 win W, -1 win B, 0 draw
         
     z_b = -z_w
@@ -179,8 +179,8 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
             
         elif res == 0:
             draws += 1
-    print(f"current_net con il Bianco: {wins}")
-
+    print(f"current_net Vittorie con il Bianco: {wins}")
+    wins_white = wins
     # current_net con il Nero
     for _ in range(games - half):
         res = play_det(best_net, current_net, mcts_best, mcts_curr)
@@ -188,8 +188,8 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
             wins += 1
         elif res == 0:
             draws += 1
-    print(f"current_net con il Nero: {wins}")
-
+    print(f"current_net Vittorie con il Nero: { wins - wins_white}")
+    print(f"current_net Pareggi: {draws}")
     return wins / (games-draws)  # percentuale di vittorie del current_net
 
 
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         # ---- ARENA TEST ----
         wr = arena(current_net, best_net, games=arena_games)
         print(f"  Win‑rate vs best = {wr * 100:.1f}%")
-        if wr > 0.55:
+        if wr > 0.80:
             print("  ✅ Nuova rete promossa!")
             best_net = ValueNetwork(hidden_channels=32, output_dim=2).to(DEVICE)
             best_net.load_state_dict(current_net.state_dict())
