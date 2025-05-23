@@ -4,7 +4,6 @@ import math
 import random
 from collections import Counter
 from typing import List, Tuple
-
 import torch
 from torch.utils.data import Dataset, DataLoader
 
@@ -158,7 +157,7 @@ def play_det(
         mcts = mcts_w if state.current_player() == 1 else mcts_b
         move = mcts.search(state, temperature=0.0)
         state = state.next_state(move)
-        
+    print(state)
     return state.result()
 
 
@@ -172,7 +171,7 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
     # current_net con il Bianco
     for i in range(half):
         res = play_det(current_net, best_net, mcts_curr, mcts_best)
-        if res == 1e-4:
+        if res == 1:
             wins += 1
             
         elif res == 1e-4:
@@ -216,7 +215,6 @@ def train_value_net(
             loss = value_loss_fn(preds, targets_batch)
             loss.backward()
             optimizer.step()
-
             total_loss += loss.item() * states_batch.size(0)
 
         avg_loss = total_loss / len(train_loader.dataset)
