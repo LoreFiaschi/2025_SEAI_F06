@@ -13,12 +13,12 @@ class ValueNetwork(nn.Module):
     """
     def __init__(self, hidden_channels: int = HIDDEN_CHANNELS, output_dim: int = 1):
         super().__init__()
-        self.conv1 = nn.Conv2d(INPUT_CHANNELS, hidden_channels, 3, padding=1)
+        self.conv1 = nn.Conv2d(INPUT_CHANNELS, hidden_channels, 3, padding=1, bias=False)
         self.bn1   = nn.BatchNorm2d(hidden_channels)
 
         self.conv2 = nn.Conv2d(hidden_channels,
                                hidden_channels * 2,
-                               3, padding=1)
+                               3, padding=1, bias=False)
         self.bn2   = nn.BatchNorm2d(hidden_channels * 2)
 
         self.fc = nn.Linear((hidden_channels * 2) * 5 * 5, output_dim)
