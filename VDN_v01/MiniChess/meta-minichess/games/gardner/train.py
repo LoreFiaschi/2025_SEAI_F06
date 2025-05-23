@@ -175,7 +175,7 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
         if res == 1e-4:
             wins += 1
             
-        elif res == 0:
+        elif res == 1e-4:
             draws += 1
         print(f"game {i+1} current_net vs best_net: {res}")
     print(f"current_net Vittorie con il Bianco: {wins}")
