@@ -170,22 +170,24 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
     half = games // 2
 
     # current_net con il Bianco
-    for _ in range(half):
+    for i in range(half):
         res = play_det(current_net, best_net, mcts_curr, mcts_best)
-        if res == 1:
+        if res == 1e-4:
             wins += 1
             
         elif res == 0:
             draws += 1
+        print(f"game {i+1} current_net vs best_net: {res}")
     print(f"current_net Vittorie con il Bianco: {wins}")
     wins_white = wins
     # current_net con il Nero
-    for _ in range(games - half):
+    for i in range(games - half):
         res = play_det(best_net, current_net, mcts_best, mcts_curr)
         if res == -1:  # il Nero vince ⇒ current_net vince
             wins += 1
-        elif res == 0:
+        elif res == 1e-4:
             draws += 1
+        print(f"game {i+1} current_net vs best_net: {res}")
     print(f"current_net Vittorie con il Nero: { wins - wins_white}")
     print(f"current_net Pareggi: {draws}")
     return wins / (games-draws)  # percentuale di vittorie del current_net
