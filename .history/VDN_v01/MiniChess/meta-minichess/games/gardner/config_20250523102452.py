@@ -19,7 +19,7 @@ num_cycles        = 15          # cicli self‑play + training
 arena_games       = 50         # partite deterministiche per l'arena
 games_per_cycle   = 50          # partite self‑play per ciclo
 max_buffer_size   = 10_000      # massimo numero di transizioni nel buffer
-iterations_MCTS   = 100         # simulazioni MCTS per mossa
+iterations_MCTS   = 60         # simulazioni MCTS per mossa
 
 learning_rate   = 5e-3
 weight_decay    = 0.0

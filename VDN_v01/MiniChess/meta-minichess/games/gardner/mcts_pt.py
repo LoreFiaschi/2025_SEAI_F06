@@ -8,7 +8,7 @@ from typing import List, Optional, Dict
 from games.gardner.minichess_state import MiniChessState, Move
 import torch
 from games.gardner.value_network import ValueNetwork
-from config import PIECE_TO_IDX, N_TYPES, INPUT_CHANNELS
+from config import DEVICE, PIECE_TO_IDX, N_TYPES, INPUT_CHANNELS
 
 
 def encode_state_as_tensor(state: MiniChessState) -> torch.Tensor:
@@ -33,7 +33,7 @@ def encode_state_as_tensor(state: MiniChessState) -> torch.Tensor:
             else:                             # nero
                 t[idx+N_TYPES, r, c] = 1.0
     t[-1, :, :] = float(player)
-    return t
+    return t.to(DEVICE)
 
 
 

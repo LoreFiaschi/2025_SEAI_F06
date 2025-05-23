@@ -60,7 +60,7 @@ class ChessValueDataset(Dataset):
 
     def __getitem__(self, idx: int):
         st_t, z_w, z_b = self.items[idx]
-        return st_t.float(), torch.tensor([z_w, z_b], dtype=torch.float32)
+        return st_t.float(), torch.tensor([z_w, z_b], dtype=torch.float32, device=DEVICE)
 
 
 # ---------- Loss MSE su due output ----------
@@ -125,7 +125,7 @@ def self_play_game(
         state, phi_prev = next_state, phi_next
         
     # Esito dal punto di vista del Bianco (serve board come LISTA di liste)
-    print(f"\n{state}, result = {state.result()}")
+
    #board_lists = [list(r) for r in state.board()]
     z_w = state.result()   # +1 win W, -1 win B, 0 draw
         
@@ -133,8 +133,6 @@ def self_play_game(
         
     if(z_w == 1e-4):
         z_b = z_w
-    
-    print(f"z_w = {z_w}, z_b = {z_b}\n")
     # Propagazione retrograda dei reward di shaping
     data: List[Tuple[torch.Tensor, float, float]] = []
     cum_w = cum_b = 0.0
@@ -200,17 +198,19 @@ def train_value_net(
     train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     num_epochs: int = num_epochs,
-    device: str = DEVICE,
+    device: torch.device = DEVICE,
 ) -> float:
+    value_net.to(device)
     value_net.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
         for states_batch, targets_batch in train_loader:
+            # sposto batch su GPU
             states_batch = states_batch.to(device)
             targets_batch = targets_batch.to(device)
 
             optimizer.zero_grad()
-            preds = value_net(states_batch)  # (B,2)
+            preds = value_net(states_batch)
             loss = value_loss_fn(preds, targets_batch)
             loss.backward()
             optimizer.step()
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         # ---- ARENA TEST ----
         wr = arena(current_net, best_net, games=arena_games)
         print(f"  Win‑rate vs best = {wr * 100:.1f}%")
-        if wr > 0.80:
+        if wr > 0.55:
             print("  ✅ Nuova rete promossa!")
             best_net = ValueNetwork(hidden_channels=32, output_dim=2).to(DEVICE)
             best_net.load_state_dict(current_net.state_dict())
