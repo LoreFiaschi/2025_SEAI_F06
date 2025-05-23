@@ -114,7 +114,7 @@ def self_play_game(
         
         mover = state.current_player()
         mcts = mcts_white if mover == 1 else mcts_black
-        move = mcts.search(state, temperature=1.0)
+        move = mcts.search(state, temperature=0.78)
         next_state = state.next_state(move)
 
         phi_next = compute_material_potential(next_state.board())
