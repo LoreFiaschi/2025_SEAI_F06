@@ -15,11 +15,11 @@ ALPHA = 1.0         # scaling dello shaping
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------- Hyper‑parametri globali ----------
-num_cycles        = 22          # cicli self‑play + training
-arena_games       = 50         # partite deterministiche per l'arena
-games_per_cycle   = 50          # partite self‑play per ciclo
-max_buffer_size   = 25000      # massimo numero di transizioni nel buffer
-iterations_MCTS   = 500         # simulazioni MCTS per mossa
+num_cycles        = 15          # cicli self‑play + training
+arena_games       = 10         # partite deterministiche per l'arena
+games_per_cycle   = 10          # partite self‑play per ciclo
+max_buffer_size   = 10_000      # massimo numero di transizioni nel buffer
+iterations_MCTS   = 100         # simulazioni MCTS per mossa
 
 learning_rate   = 5e-3
 weight_decay    = 0.0
@@ -28,7 +28,7 @@ num_epochs      = 3
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-INPUT_CHANNELS = 13  # 6 bianchi + 6 neri + player = 13
+INPUT_CHANNELS = 13  # 6 bianchi + 6 neri + turno = 13
 HIDDEN_CHANNELS = 32  # numero di filtri del primo conv-layer
 
 # ----MCTS Hyper-parameters----

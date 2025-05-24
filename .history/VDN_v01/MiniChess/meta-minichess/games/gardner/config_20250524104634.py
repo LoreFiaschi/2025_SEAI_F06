@@ -15,10 +15,10 @@ ALPHA = 1.0         # scaling dello shaping
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------- Hyper‑parametri globali ----------
-num_cycles        = 22          # cicli self‑play + training
+num_cycles        = 15          # cicli self‑play + training
 arena_games       = 50         # partite deterministiche per l'arena
 games_per_cycle   = 50          # partite self‑play per ciclo
-max_buffer_size   = 25000      # massimo numero di transizioni nel buffer
+max_buffer_size   = 10_000      # massimo numero di transizioni nel buffer
 iterations_MCTS   = 500         # simulazioni MCTS per mossa
 
 learning_rate   = 5e-3

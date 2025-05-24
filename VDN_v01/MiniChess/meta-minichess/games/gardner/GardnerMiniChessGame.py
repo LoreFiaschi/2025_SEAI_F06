@@ -145,11 +145,10 @@ class GardnerMiniChessGame(Game):
     def getGameEnded(self, board, player):
         b = Board(self.n, board)
         if b.is_checkmate(player):   return -1   # se tocca a player e non può uscire dallo scacco
-        if b.is_win(player):         return 1    # re avversario catturato
         if b.is_in_check(player):    return 0    # scacco ma non matto
         if not b.has_legal_moves(player):
             return 1e-4               # patta per stallo
-        if b.is_insufficient_material():   # AGGIUNTA QUI
+        if b.is_insufficient_material():  
             return 1e-4
         return 0
 

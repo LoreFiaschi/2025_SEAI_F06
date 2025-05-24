@@ -119,7 +119,7 @@ class MCTS:
         self.value_net = value_net.to(device)
         self.value_net.eval()
 
-    def search(self, root_state: MiniChessState, temperature: float = 0.78) -> Move:
+    def search(self, root_state: MiniChessState, temperature: float = 0.8) -> Move:
         """
         Esegue MCTS a partire dallo stato root_state.
         Ogni chiamata ricrea la root da zero (nessun tree reuse).
