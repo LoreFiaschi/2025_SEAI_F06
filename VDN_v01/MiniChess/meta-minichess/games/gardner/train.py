@@ -127,8 +127,8 @@ def self_play_game(
 
    #board_lists = [list(r) for r in state.board()]
     z_w = state.result()   # +1 win W, -1 win B, 0 draw
-    print(f"board finale: {state}")
-    print(f"Esito partita: {z_w}")
+    #print(f"board finale: {state}")
+    #print(f"Esito partita: {z_w}")
     z_b = -z_w
         
     if(z_w == 1e-4):
@@ -158,7 +158,7 @@ def play_det(
         mcts = mcts_w if state.current_player() == 1 else mcts_b
         move = mcts.search(state, temperature=0.0)
         state = state.next_state(move)
-    print(f"board finale: {state}")
+    #print(f"board finale: {state}")
     return state.result()
 
 
@@ -177,8 +177,8 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
             
         elif res == 1e-4:
             draws += 1
-        print(f"game {i+1} current_net vs best_net: {res}")
-    print(f"current_net Vittorie con il Bianco: {wins}")
+        #print(f"game {i+1} current_net vs best_net: {res}")
+    #print(f"current_net Vittorie con il Bianco: {wins}")
     wins_white = wins
     # current_net con il Nero
     for i in range(games - half):
@@ -187,9 +187,9 @@ def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = 
             wins += 1
         elif res == 1e-4:
             draws += 1
-        print(f"game {i+1} current_net vs best_net: {res}")
-    print(f"current_net Vittorie con il Nero: { wins - wins_white}")
-    print(f"current_net Pareggi: {draws}")
+        #print(f"game {i+1} current_net vs best_net: {res}")
+    #print(f"current_net Vittorie con il Nero: { wins - wins_white}")
+    #print(f"current_net Pareggi: {draws}")
     return wins / (games-draws)  # percentuale di vittorie del current_net
 
 
@@ -243,7 +243,7 @@ if __name__ == "__main__":
         for _ in range(games_per_cycle):
             # current_net Bianco
             buffer.extend(self_play_game(mcts_curr, mcts_best))
-            print("ora gioca da Nero")
+            #print("ora gioca da Nero")
             # current_net Nero
             buffer.extend(self_play_game(mcts_best, mcts_curr))
 
