@@ -23,7 +23,7 @@ iterations_MCTS   = 500         # simulazioni MCTS per mossa
 
 learning_rate   = 5e-4
 weight_decay    = 5e-4
-batch_size      = 256
+batch_size      = 64
 num_epochs      = 5
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

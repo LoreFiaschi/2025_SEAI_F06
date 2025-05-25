@@ -156,7 +156,7 @@ def play_det(
     state = MiniChessState(game.getInitBoard(), player=1, turns=0)
     while not state.is_terminal():
         mcts = mcts_w if state.current_player() == 1 else mcts_b
-        move = mcts.search(state, temperature=0.0)
+        move = mcts.search(state, temperature=0.5)
         state = state.next_state(move)
     #print(f"board finale: {state}")
     return state.result()

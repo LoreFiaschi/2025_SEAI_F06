@@ -17,14 +17,14 @@ ALPHA = 1.0         # scaling dello shaping
 # ---------- Hyper‑parametri globali ----------
 num_cycles        = 22          # cicli self‑play + training
 arena_games       = 50         # partite deterministiche per l'arena
-games_per_cycle   = 100          # partite self‑play per ciclo
+games_per_cycle   = 50          # partite self‑play per ciclo
 max_buffer_size   = 25000      # massimo numero di transizioni nel buffer
 iterations_MCTS   = 500         # simulazioni MCTS per mossa
 
-learning_rate   = 5e-4
-weight_decay    = 5e-4
-batch_size      = 256
-num_epochs      = 5
+learning_rate   = 5e-3
+weight_decay    = 
+batch_size      = 64
+num_epochs      = 3
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
