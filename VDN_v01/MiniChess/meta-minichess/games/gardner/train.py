@@ -2,32 +2,46 @@ import os
 import sys
 import math
 import random
+import logging
 from collections import Counter
 from typing import List, Tuple
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-# ────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Path‑hack: aggiunge due livelli sopra (la cartella che contiene "games/")
 this_dir: str = os.path.dirname(__file__)                              # .../games/gardner
 project_root = os.path.abspath(os.path.join(this_dir, "..", ".."))  # .../meta‑minichess
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-# ────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 
 from games.gardner.value_network import ValueNetwork
 from games.gardner.mcts_pt import MCTS, encode_state_as_tensor
 from games.gardner.minichess_state import MiniChessState
 from games.gardner.GardnerMiniChessGame import GardnerMiniChessGame
 
-# ─── CONFIG.PY ──────────────────────────────────────────────────────────────────────── 
+# ─── CONFIG.PY ────────────────────────────────────────────────────────────
 from config import HIDDEN_CHANNELS, PIECE_VALUES, STEP_COST, ALPHA
 from config import num_cycles, arena_games, games_per_cycle
 from config import max_buffer_size, iterations_MCTS
 from config import learning_rate, weight_decay, batch_size, num_epochs
 from config import DEVICE
-# ──────────────────────────────────────────────────────────────────────────── 
+# ────────────────────────────────────────────────────────────────────────────
 
+# ─── setup logging: write only to file, no console output ────────────────
+log_path = os.path.join(this_dir, 'training.log')
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# Remove existing handlers
+for h in logger.handlers[:]:
+    logger.removeHandler(h)
+# File handler
+file_handler = logging.FileHandler(log_path, mode='a')
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 # Contatore diagnostico per la distribuzione dei risultati finali
 z_counter: Counter = Counter()
@@ -37,14 +51,17 @@ CKPT_DIR = "checkpoints"
 os.makedirs(CKPT_DIR, exist_ok=True)
 
 def save_ckpt(net: torch.nn.Module, name: str) -> None:
-    torch.save(net.state_dict(), os.path.join(CKPT_DIR, f"{name}.pth"))
+    path = os.path.join(CKPT_DIR, f"{name}.pth")
+    torch.save(net.state_dict(), path)
+    logger.info(f"Checkpoint saved: {path}")
 
 
 def load_ckpt(name: str, device: str = DEVICE) -> torch.nn.Module:
     path = os.path.join(CKPT_DIR, f"{name}.pth")
-    net = ValueNetwork(hidden_channels=32, output_dim=2).to(device)
+    net = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=2).to(device)
     net.load_state_dict(torch.load(path, map_location=device))
     net.eval()
+    logger.info(f"Checkpoint loaded: {path}")
     return net
 
 # ─── Dataset con target (z_white, z_black) ─────────────────────────────────
@@ -62,21 +79,16 @@ class ChessValueDataset(Dataset):
         return st_t.float(), torch.tensor([z_w, z_b], dtype=torch.float32, device=DEVICE)
 
 
-# ---------- Loss MSE su due output ----------
-
 def value_loss_fn(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return torch.nn.functional.mse_loss(pred, target)
 
-
-# ---------- Reward shaping separato per colore ----------
 
 def compute_white_black_rewards(
     phi_prev: float,
     phi_next: float,
     mover: int  # +1 Bianco, -1 Nero
 ) -> Tuple[float, float]:
-    """Restituisce (reward_white, reward_black) per la mossa appena giocata."""
-    delta = phi_next - phi_prev  # >0 se il Bianco guadagna materiale
+    delta = phi_next - phi_prev
     if mover == 1:
         r_w =  ALPHA * delta - STEP_COST
         r_b = -ALPHA * delta
@@ -86,8 +98,6 @@ def compute_white_black_rewards(
     return r_w, r_b
 
 
-# ---------- Potenziale materiale ----------
-
 def compute_material_potential(board: Tuple[Tuple[int, ...], ...]) -> float:
     total = 0.0
     for row in board:
@@ -95,23 +105,20 @@ def compute_material_potential(board: Tuple[Tuple[int, ...], ...]) -> float:
             if piece == 0 or abs(piece) == 60000:
                 continue
             val = PIECE_VALUES.get(abs(piece), 1.0)
-            total += math.copysign(val, piece)  # positivo se pezzo bianco
+            total += math.copysign(val, piece)
     return total
 
-
-# ---------- Self‑play asimmetrico (due reti) ----------
 
 def self_play_game(
     mcts_white: MCTS,
     mcts_black: MCTS,
 ) -> List[Tuple[torch.Tensor, float, float]]:
-    transitions: List[Tuple[torch.Tensor, float, float]] = []  # (tensor, r_w, r_b)
+    transitions: List[Tuple[torch.Tensor, float, float]] = []
     game = GardnerMiniChessGame()
     state = MiniChessState(game.getInitBoard(), player=1, turns=0)
     phi_prev = compute_material_potential(state.board())
 
     while not state.is_terminal():
-        
         mover = state.current_player()
         mcts = mcts_white if mover == 1 else mcts_black
         move = mcts.search(state, temperature=0.8)
@@ -122,18 +129,12 @@ def self_play_game(
         transitions.append((encode_state_as_tensor(state), r_w, r_b))
 
         state, phi_prev = next_state, phi_next
-        
-    # Esito dal punto di vista del Bianco (serve board come LISTA di liste)
 
-   #board_lists = [list(r) for r in state.board()]
-    z_w = state.result()   # +1 win W, -1 win B, 0 draw
-    #print(f"board finale: {state}")
-    #print(f"Esito partita: {z_w}")
+    z_w = state.result()
     z_b = -z_w
-        
-    if(z_w == 1e-4):
+    if z_w == 1e-4:
         z_b = z_w
-    # Propagazione retrograda dei reward di shaping
+
     data: List[Tuple[torch.Tensor, float, float]] = []
     cum_w = cum_b = 0.0
     for st_t, r_w, r_b in reversed(transitions):
@@ -143,57 +144,45 @@ def self_play_game(
     return data
 
 
-# ---------- Arena deterministica ----------
-
 def play_det(
     net_white: torch.nn.Module,
     net_black: torch.nn.Module,
     mcts_w: MCTS,
     mcts_b: MCTS,
 ) -> int:
-    """Singola partita a temperatura 0. Ritorna +1, 0, -1 dal POV del Bianco."""
     game = GardnerMiniChessGame()
     state = MiniChessState(game.getInitBoard(), player=1, turns=0)
     while not state.is_terminal():
         mcts = mcts_w if state.current_player() == 1 else mcts_b
-        move = mcts.search(state, temperature=0.0)
+        move = mcts.search(state, temperature=0.2)
         state = state.next_state(move)
-    #print(f"board finale: {state}")
     return state.result()
 
 
 def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = arena_games) -> float:
-    """Percentuale di vittorie di current_net contro best_net."""
     wins = draws = 0
     mcts_curr = MCTS(current_net, iterations_MCTS)
     mcts_best = MCTS(best_net, iterations_MCTS)
     half = games // 2
 
-    # current_net con il Bianco
-    for i in range(half):
+    for _ in range(half):
         res = play_det(current_net, best_net, mcts_curr, mcts_best)
         if res == 1:
             wins += 1
-            
         elif res == 1e-4:
             draws += 1
-        #print(f"game {i+1} current_net vs best_net: {res}")
-    #print(f"current_net Vittorie con il Bianco: {wins}")
     wins_white = wins
-    # current_net con il Nero
-    for i in range(games - half):
+
+    for _ in range(games - half):
         res = play_det(best_net, current_net, mcts_best, mcts_curr)
-        if res == -1:  # il Nero vince ⇒ current_net vince
+        if res == -1:
             wins += 1
         elif res == 1e-4:
             draws += 1
-        #print(f"game {i+1} current_net vs best_net: {res}")
-    #print(f"current_net Vittorie con il Nero: { wins - wins_white}")
-    #print(f"current_net Pareggi: {draws}")
-    return wins / (games-draws)  # percentuale di vittorie del current_net
 
+    logger.info(f"Arena: wins_white={wins_white}, wins_black={wins - wins_white}, draws={draws}")
+    return wins / (games - draws)
 
-# ---------- Training della rete di valore ----------
 
 def train_value_net(
     value_net: torch.nn.Module,
@@ -204,64 +193,55 @@ def train_value_net(
 ) -> float:
     value_net.to(device)
     value_net.train()
+    scaler = torch.GradScaler()
     for epoch in range(num_epochs):
         total_loss = 0.0
         for states_batch, targets_batch in train_loader:
-            # sposto batch su GPU
             states_batch = states_batch.to(device)
             targets_batch = targets_batch.to(device)
 
             optimizer.zero_grad()
-            preds = value_net(states_batch)
-            loss = value_loss_fn(preds, targets_batch)
-            loss.backward()
-            optimizer.step()
+            with torch.autocast(device_type=DEVICE, dtype=torch.float16):
+                preds = value_net(states_batch)
+                loss = value_loss_fn(preds, targets_batch)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             total_loss += loss.item() * states_batch.size(0)
 
         avg_loss = total_loss / len(train_loader.dataset)
-        print(f"    Epoch {epoch + 1}/{num_epochs} | Loss = {avg_loss:.5f}")
+        logger.info(f"Epoch {epoch+1}/{num_epochs} - Loss: {avg_loss:.5f}")
     return avg_loss
 
 if __name__ == "__main__":
-    # Primo checkpoint casuale
     best_net = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=2).to(DEVICE)
     save_ckpt(best_net, "best_0")
 
     for cycle in range(1, num_cycles + 1):
-        print(f"\n===== GENERAZIONE {cycle} =====")
-
-        # Clone del best per iniziare l'apprendimento
+        logger.info(f"===== GENERAZIONE {cycle} =====")
         current_net = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=2).to(DEVICE)
         current_net.load_state_dict(best_net.state_dict())
-        optimizer = torch.optim.Adam(current_net.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        optimizer = torch.optim.AdamW(current_net.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-        # ---- SELF‑PLAY ASIMMETRICO ----
         buffer: list[tuple[torch.Tensor, float, float]] = []
         mcts_curr = MCTS(current_net, iterations_MCTS)
         mcts_best = MCTS(best_net, iterations_MCTS)
 
         for _ in range(games_per_cycle):
-            # current_net Bianco
             buffer.extend(self_play_game(mcts_curr, mcts_best))
-            #print("ora gioca da Nero")
-            # current_net Nero
             buffer.extend(self_play_game(mcts_best, mcts_curr))
 
-        # Trim buffer se troppo grande
         if len(buffer) > max_buffer_size:
             buffer = random.sample(buffer, max_buffer_size)
 
-        # ---- TRAINING ----
         train_loader = DataLoader(ChessValueDataset(buffer), batch_size=batch_size, shuffle=True)
         train_value_net(current_net, train_loader, optimizer, num_epochs=num_epochs, device=DEVICE)
 
-        # ---- ARENA TEST ----
         wr = arena(current_net, best_net, games=arena_games)
-        print(f"  Win‑rate vs best = {wr * 100:.1f}%")
+        logger.info(f"Win-rate vs best: {wr*100:.1f}%")
         if wr > 0.55:
-            print("  ✅ Nuova rete promossa!")
-            best_net = ValueNetwork(hidden_channels=32, output_dim=2).to(DEVICE)
+            best_net = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=2).to(DEVICE)
             best_net.load_state_dict(current_net.state_dict())
             save_ckpt(best_net, f"best_{cycle}")
         else:
-            print("  ❌ Rete non promossa, si continua…")
+            logger.info("Rete non promossa, si continua…")

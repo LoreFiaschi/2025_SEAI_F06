@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from config import INPUT_CHANNELS, HIDDEN_CHANNELS
 
 class ValueNetwork(nn.Module):
-    def __init__(self, hidden_channels: int = HIDDEN_CHANNELS, output_dim: int = 1):
+    def __init__(self, hidden_channels: int = HIDDEN_CHANNELS, output_dim: int = 2):
         super().__init__()
         self.conv1 = nn.Conv2d(INPUT_CHANNELS, hidden_channels, kernel_size=3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(hidden_channels)
