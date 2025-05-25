@@ -10,8 +10,8 @@ PIECE_VALUES = {
     929: 0.011,   # regina
     60000: 0.0    # re (non conta ai fini del potenziale)
 }
-STEP_COST = 5e-5  # penalità al giocatore di turno per ogni mossa
-ALPHA = 2.0         # scaling dello shaping
+STEP_COST = 0.0001  # penalità al giocatore di turno per ogni mossa
+ALPHA = 1.0         # scaling dello shaping
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------- Hyper‑parametri globali ----------
@@ -29,7 +29,7 @@ num_epochs      = 5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 INPUT_CHANNELS = 13  # 6 bianchi + 6 neri + player = 13
-HIDDEN_CHANNELS = 64  # numero di filtri del primo conv-layer
+HIDDEN_CHANNELS = 32  # numero di filtri del primo conv-layer
 
 # ----MCTS Hyper-parameters----
 

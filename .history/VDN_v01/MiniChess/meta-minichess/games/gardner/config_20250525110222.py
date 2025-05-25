@@ -10,8 +10,8 @@ PIECE_VALUES = {
     929: 0.011,   # regina
     60000: 0.0    # re (non conta ai fini del potenziale)
 }
-STEP_COST = 5e-5  # penalità al giocatore di turno per ogni mossa
-ALPHA = 2.0         # scaling dello shaping
+STEP_COST = 0.0001  # penalità al giocatore di turno per ogni mossa
+ALPHA = 1.0         # scaling dello shaping
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------- Hyper‑parametri globali ----------
