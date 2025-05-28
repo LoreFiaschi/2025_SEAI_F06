@@ -1,0 +1,11 @@
+2025-05-26 17:46:46,477 - INFO - Checkpoint saved: checkpoints\best_0.pth
+2025-05-26 17:46:46,478 - INFO - ===== GENERAZIONE 1 =====
+2025-05-26 20:25:35,488 - INFO - Epoch 1/5 - Loss: 1.42358
+2025-05-26 20:25:36,029 - INFO - Epoch 2/5 - Loss: 1.42911
+2025-05-26 20:25:36,611 - INFO - Epoch 3/5 - Loss: 1.42911
+2025-05-26 20:25:37,142 - INFO - Epoch 4/5 - Loss: 1.42911
+2025-05-26 20:25:37,650 - INFO - Epoch 5/5 - Loss: 1.42911
+2025-05-26 20:33:45,507 - INFO - Checkpoint saved: checkpoints\best_0.pth
+2025-05-26 20:33:45,507 - INFO - ===== GENERAZIONE 1 =====
+2025-05-27 09:57:07,903 - INFO - Checkpoint saved: checkpoints\best_0.pth
+2025-05-27 09:57:07,903 - INFO - ===== GENERAZIONE 1 =====

@@ -11,25 +11,24 @@ PIECE_VALUES = {
     60000: 0.0    # re (non conta ai fini del potenziale)
 }
 STEP_COST = 5e-5  # penalità al giocatore di turno per ogni mossa
-ALPHA = 2.0         # scaling dello shaping
+ALPHA = 1.0         # scaling dello shaping
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------- Hyper‑parametri globali ----------
-num_cycles        = 22          # cicli self‑play + training
-arena_games       = 50         # partite deterministiche per l'arena
-games_per_cycle   = 100          # partite self‑play per ciclo
+num_cycles        = 20          # cicli self‑play + training
+arena_games       = 100         # partite deterministiche per l'arena
+games_per_cycle   = 200          # partite self‑play per ciclo
 max_buffer_size   = 25000      # massimo numero di transizioni nel buffer
-iterations_MCTS   = 500         # simulazioni MCTS per mossa
+iterations_MCTS   = 800         # simulazioni MCTS per mossa
 
-learning_rate   = 5e-4
-weight_decay    = 5e-4
-batch_size      = 256
+learning_rate   = 1e-4
+weight_decay    = 1e-5
+batch_size      = 1024
 num_epochs      = 5
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-INPUT_CHANNELS = 13  # 6 bianchi + 6 neri + player = 13
-HIDDEN_CHANNELS = 64  # numero di filtri del primo conv-layer
+HIDDEN_CHANNELS = 128  # numero di filtri del primo conv-layer
 
 # ----MCTS Hyper-parameters----
 
@@ -47,7 +46,7 @@ INPUT_CHANNELS = N_TYPES * 2 + 1   # 6 bianchi + 6 neri + turno = 13
 
 # --- MiniChessState (o in un util condiviso) -----------------
 
-MAX_TURNS = 200
+MAX_TURNS = 150
 DRAW_REPETITION = 3
 REWARD_DRAW = 1e-4
 
