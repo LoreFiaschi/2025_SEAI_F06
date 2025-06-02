@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from config import INPUT_CHANNELS, HIDDEN_CHANNELS
 
 class ValueNetwork(nn.Module):
-    def __init__(self, hidden_channels: int = HIDDEN_CHANNELS, output_dim: int = 2):
+    def __init__(self, hidden_channels: int = HIDDEN_CHANNELS, output_dim: int = 1):
         super().__init__()
         self.conv1 = nn.Conv2d(INPUT_CHANNELS, hidden_channels, kernel_size=3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(hidden_channels)
@@ -20,5 +20,6 @@ class ValueNetwork(nn.Module):
         h = self.activation(self.bn2(self.conv2(h)))
         h = self.activation(self.bn3(self.conv3(h)))
         h = h.view(h.size(0), -1)
-        v = torch.tanh(self.fc(h))
-        return v
+        v = self.fc(h)
+        #v = torch.tanh(self.fc(h))
+        return v.squeeze(-1)  # Ritorna un tensore 1D con la dimensione di output

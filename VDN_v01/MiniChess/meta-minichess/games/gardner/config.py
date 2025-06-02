@@ -3,32 +3,32 @@ import torch
 # ---------- Configurazione del gioco ----------
 
 PIECE_VALUES = {
-    100: 0.001,   # pedone
-    280: 0.003,   # cavallo
-    320: 0.003,   # alfiere
-    479: 0.005,   # torre
-    929: 0.011,   # regina
+    100: 1,   # pedone
+    280: 3,   # cavallo
+    320: 3,   # alfiere
+    479: 5,   # torre
+    929: 11,   # regina
     60000: 0.0    # re (non conta ai fini del potenziale)
 }
-STEP_COST = 5e-5  # penalità al giocatore di turno per ogni mossa
-ALPHA = 1.0         # scaling dello shaping
+STEP_COST = 1e-4  # penalità al giocatore di turno per ogni mossa
+ALPHA = 0.1        # scaling dello shaping
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------- Hyper‑parametri globali ----------
-num_cycles        = 20          # cicli self‑play + training
-arena_games       = 100         # partite deterministiche per l'arena
-games_per_cycle   = 200          # partite self‑play per ciclo
-max_buffer_size   = 25000      # massimo numero di transizioni nel buffer
+num_cycles        = 50          # cicli self‑play + training
+arena_games       = 50         # partite deterministiche per l'arena
+games_per_cycle   = 300         # partite self‑play per ciclo
+max_buffer_size   = 16000      # massimo numero di transizioni nel buffer
 iterations_MCTS   = 800         # simulazioni MCTS per mossa
 
-learning_rate   = 1e-4
-weight_decay    = 1e-5
-batch_size      = 1024
-num_epochs      = 5
+learning_rate   = 1e-3
+weight_decay    = 1e-6
+batch_size      = 128
+num_epochs      = 8
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-HIDDEN_CHANNELS = 128  # numero di filtri del primo conv-layer
+HIDDEN_CHANNELS = 256  # numero di filtri del primo conv-layer
 
 # ----MCTS Hyper-parameters----
 
@@ -41,7 +41,7 @@ PIECE_TO_IDX = {               # codici definiti in Board
     60000: 5,  # King
 }
 N_TYPES = 6                    # numero di tipi di pezzo
-INPUT_CHANNELS = N_TYPES * 2 + 1   # 6 bianchi + 6 neri + turno = 13
+INPUT_CHANNELS = N_TYPES * 2   # 6 bianchi + 6 neri
 # ------------------------------------------------------------------
 
 # --- MiniChessState (o in un util condiviso) -----------------
@@ -51,3 +51,5 @@ DRAW_REPETITION = 3
 REWARD_DRAW = 1e-4
 
 # -------------------------------------------------------------------
+
+GAMMA = 0.95 # fattore di sconto per il futuro
