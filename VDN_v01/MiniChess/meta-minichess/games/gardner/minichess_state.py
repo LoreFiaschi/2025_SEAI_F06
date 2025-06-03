@@ -65,12 +65,11 @@ class MiniChessState:
         if self._turns >= MAX_TURNS:             
             return REWARD_DRAW  # patta   
         if self._is_threefold():
-            #print(f"RIPETIZIONE MOSSE!")
             return REWARD_DRAW    
         r = self._game_singleton.getGameEnded(self._as_lists(), self._player) 
         if r == REWARD_DRAW:   
             return r             
-        return -self._player # 1e-4 = patta, 0 = in corso, 1 = vittoria, -1 = sconfitta
+        return -self._player
     # ---------------- hashing & equality ----------------------------------
 
     def __hash__(self) -> int:

@@ -11,22 +11,22 @@ from games.gardner.value_network import ValueNetwork
 from config import DEVICE, PIECE_TO_IDX, N_TYPES, INPUT_CHANNELS
 
 
-def encode_state_as_tensor(state: MiniChessState) -> torch.Tensor:
-    board = state.board()
-    player = state.current_player()
-    t = torch.zeros(INPUT_CHANNELS, 5, 5, dtype=torch.float32)
+def encode_state_as_tensor(state):
+    board = state.board()                 # già ruotata lato-rete
+    mover = state.current_player()        # +1 bianco | -1 nero
+    t = torch.zeros(12, 5, 5, dtype=torch.float32)
+
     for r in range(5):
         for c in range(5):
             p = board[r][c]
             if p == 0:
                 continue
-            idx = PIECE_TO_IDX[abs(p)]
-            if p > 0:
-                t[idx, r, c] = 1.0
-            else:
-                t[idx + N_TYPES, r, c] = 1.0
-    t[-1, :, :] = float(player)
+            idx = PIECE_TO_IDX[abs(p)]    # 0..5
+            off = 0 if p * mover > 0 else 6
+            t[idx + off, r, c] = 1.0
     return t.to(DEVICE)
+
+
 
 @dataclass
 class _Node:
@@ -85,7 +85,7 @@ class MCTS:
         self.batch_size = batch_size
         self._queue: List[_Node] = []
 
-    def search(self, root_state: MiniChessState, temperature: float = 0.8) -> Move:
+    def search(self, root_state: MiniChessState, temperature: float = 0.8, by_value: bool = False) -> Move:
         # new root
         self.root = _Node(root_state, parent=None, move=None)
         # dirichlet noise
@@ -119,29 +119,31 @@ class MCTS:
         if len(self._queue) >= self.batch_size:
             self._flush()
 
-    def _flush(self) -> None: #sarebbe la rollout
-        if not self._queue:
-            return
-        states = torch.stack([encode_state_as_tensor(n.state) for n in self._queue], dim=0)
-        states = states.to(DEVICE)
-        with torch.no_grad():
-            raw = self.value_net(states)
-        for node, out in zip(self._queue, raw):
-            if out.numel()==1:
-                v = out.item()
-            else:
-                v = out[0].item() if node.state.current_player()==1 else out[1].item()
-                #logger.info(f"valutazione: {v} per {node.state.current_player()}")
-            node.backpropagate(v)
-        self._queue.clear()
+    def _flush(self) -> None:
+         if not self._queue:
+             return
+         states = torch.stack([encode_state_as_tensor(n.state) for n in self._queue], dim=0).to(DEVICE)
+         with torch.no_grad():
+             raw = self.value_net(states)
+         for node, out in zip(self._queue, raw):
+             #v = out.item()
+             v = max(-1.0, min(1.0, out.item()))
+             node.backpropagate(v)
+         self._queue.clear()
 
-    def _select_move(self, temperature: float) -> Move:
+    def _select_move(self, temperature: float ) -> Move:
         children = self.root.children
+        if temperature == 0.0:
+            # scegli il figlio con win_ratio maggiore (v = wins/visits)
+            # attenzione ai nodi non visitati
+            def value_score(c):
+                return (c.wins / c.visits) if c.visits > 0 else float("-inf")
+            best = max(children, key=value_score)
+            return best.move
+
+        # comportamento classico basato sulle visite
         visits = [c.visits for c in children]
-        if temperature==0.0:
-            return max(children, key=lambda c: c.visits).move
-        weights = [v**(1/temperature) for v in visits]
+        weights = [v ** (1/temperature) for v in visits]
         total = sum(weights)
-        probs = [w/total for w in weights]
-        #logger.info(f"mossa selezionata ")
+        probs = [w / total for w in weights]
         return self.rng.choices(children, weights=probs, k=1)[0].move
