@@ -1,0 +1,4 @@
+in order to run the AI vs AI demo: python "path_to demo_dual.py" --ckpt_white "network_1_path" --ckpt_black "network_2_path"
+
+in order to run the AI vs AI demo: ."path_to_demo.py" --ckpt "path_to_newtork"  --delay 0.5        
+
