@@ -6,25 +6,25 @@ PIECE_VALUES = {
     100: 1,   # pedone
     280: 3,   # cavallo
     320: 3,   # alfiere
-    479: 5,   # torre
-    929: 11,   # regina
+    479: 4,   # torre
+    929: 7,   # regina
     60000: 0.0    # re (non conta ai fini del potenziale)
 }
-STEP_COST = 1e-4  # penalità al giocatore di turno per ogni mossa
-ALPHA = 0.1        # scaling dello shaping
+STEP_COST = 1e-5  # penalità al giocatore di turno per ogni mossa
+ALPHA = 0.08        # scaling dello shaping
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------- Hyper‑parametri globali ----------
 num_cycles        = 50          # cicli self‑play + training
 arena_games       = 50         # partite deterministiche per l'arena
-games_per_cycle   = 300         # partite self‑play per ciclo
+games_per_cycle   = 500         # partite self‑play per ciclo
 max_buffer_size   = 16000      # massimo numero di transizioni nel buffer
 iterations_MCTS   = 800         # simulazioni MCTS per mossa
 
 learning_rate   = 1e-3
 weight_decay    = 1e-6
-batch_size      = 128
-num_epochs      = 8
+batch_size      = 256
+num_epochs      = 10
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
