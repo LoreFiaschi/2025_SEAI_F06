@@ -10,21 +10,21 @@ PIECE_VALUES = {
     929: 11,   # regina
     60000: 0.0    # re (non conta ai fini del potenziale)
 }
-STEP_COST = 1e-4  # penalità al giocatore di turno per ogni mossa
-ALPHA = 0.1        # scaling dello shaping
+STEP_COST = 5e-5  # penalità al giocatore di turno per ogni mossa
+ALPHA = 0.1      # scaling dello shaping
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------- Hyper‑parametri globali ----------
 num_cycles        = 50          # cicli self‑play + training
-arena_games       = 50         # partite deterministiche per l'arena
+arena_games       = 100         # partite deterministiche per l'arena
 games_per_cycle   = 300         # partite self‑play per ciclo
 max_buffer_size   = 16000      # massimo numero di transizioni nel buffer
 iterations_MCTS   = 800         # simulazioni MCTS per mossa
 
-learning_rate   = 1e-3
+learning_rate   = 0.01
 weight_decay    = 1e-6
-batch_size      = 128
-num_epochs      = 8
+batch_size      = 256
+num_epochs      = 10
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -41,7 +41,7 @@ PIECE_TO_IDX = {               # codici definiti in Board
     60000: 5,  # King
 }
 N_TYPES = 6                    # numero di tipi di pezzo
-INPUT_CHANNELS = N_TYPES * 2   # 6 bianchi + 6 neri
+INPUT_CHANNELS = N_TYPES * 2 + 1   # 6 bianchi + 6 neri + turno = 13
 # ------------------------------------------------------------------
 
 # --- MiniChessState (o in un util condiviso) -----------------
@@ -51,5 +51,3 @@ DRAW_REPETITION = 3
 REWARD_DRAW = 1e-4
 
 # -------------------------------------------------------------------
-
-GAMMA = 0.95 # fattore di sconto per il futuro
