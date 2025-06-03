@@ -168,7 +168,7 @@ def self_play_game(mcts_white: MCTS, mcts_black: MCTS, collect_for_white: bool) 
             st_t = encode_state_as_tensor(state).cpu()
             transitions.append((st_t, r_self))
 
-        state, phi_prev = next_state, phi_next
+        state, phi_prev = next_state, phi_next #aggiornamento 
 
     # ── GAME RESULT FROM EACH SIDE'S PERSPECTIVE ───────────────────
     result_white = state.result()          # +1 white win | 0 draw | -1 white lose
