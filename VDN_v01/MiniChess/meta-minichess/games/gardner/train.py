@@ -31,7 +31,7 @@ from games.gardner.mcts_pt import MCTS, encode_state_as_tensor
 from games.gardner.minichess_state import MiniChessState
 from games.gardner.GardnerMiniChessGame import GardnerMiniChessGame
 from config import (
-    MAX_TURNS, DRAW_REPETITION, GAMMA, PIECE_VALUES, ALPHA, STEP_COST,
+    HIDDEN_CHANNELS, MAX_TURNS, DRAW_REPETITION, GAMMA, PIECE_VALUES, ALPHA, STEP_COST,
     num_cycles, arena_games, games_per_cycle, max_buffer_size,
     iterations_MCTS, learning_rate, weight_decay,
     batch_size, num_epochs, DEVICE, REWARD_DRAW
