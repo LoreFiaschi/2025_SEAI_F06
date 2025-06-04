@@ -12,306 +12,240 @@ from torch import multiprocessing as mp
 from torch.utils.data import Dataset, DataLoader
 from torch.cuda.amp import GradScaler, autocast
 
-Z_MAX = 5.0
-
-# ── PYTORCH THREADING / GPU MEM ─────────────────────────────────────
+# Manage PyTorch threading & GPU memory
 torch.set_num_threads(3)
 torch.set_num_interop_threads(3)
 if torch.cuda.is_available():
-    device_id = torch.cuda.current_device()
-    torch.cuda.set_per_process_memory_fraction(0.4, device_id)
+    dev = torch.cuda.current_device()
+    torch.cuda.set_per_process_memory_fraction(0.4, dev)
 
-# ── PATH SETUP ───────────────────────────────────────────────────────
-this_dir: str = os.path.dirname(__file__)
+# Project path setup for imports
+this_dir = os.path.dirname(__file__)
 project_root = os.path.abspath(os.path.join(this_dir, "..", ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# ── DOMAIN IMPORTS ───────────────────────────────────────────────────
+# Domain imports
 from games.gardner.value_network import ValueNetwork
 from games.gardner.mcts_pt import MCTS, encode_state_as_tensor
 from games.gardner.minichess_state import MiniChessState
 from games.gardner.GardnerMiniChessGame import GardnerMiniChessGame
 from config import (
-    DRAW_REPETITION, GAMMA, HIDDEN_CHANNELS, MAX_TURNS, N_TYPES, PIECE_TO_IDX, PIECE_VALUES,
-    STEP_COST, ALPHA,
-    num_cycles, arena_games, games_per_cycle,
-    max_buffer_size, iterations_MCTS,
-    learning_rate, weight_decay, batch_size, num_epochs,
-    DEVICE, REWARD_DRAW
+    MAX_TURNS, DRAW_REPETITION, GAMMA, PIECE_VALUES, ALPHA, STEP_COST,
+    num_cycles, arena_games, games_per_cycle, max_buffer_size,
+    iterations_MCTS, learning_rate, weight_decay,
+    batch_size, num_epochs, DEVICE, REWARD_DRAW
 )
 
-# ── LOGGING ──────────────────────────────────────────────────────────
+# Setup logger to file
 log_path = os.path.join(this_dir, "training.log")
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-for h in logger.handlers[:]:
+for h in list(logger.handlers):
     logger.removeHandler(h)
 file_handler = logging.FileHandler(log_path, mode="a")
 file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 logger.addHandler(file_handler)
 
-# ── CHECKPOINT HELPERS ───────────────────────────────────────────────
+# Checkpoint helpers
 CKPT_DIR = "checkpoints"
 os.makedirs(CKPT_DIR, exist_ok=True)
-
-def save_ckpt(net: torch.nn.Module, name: str) -> None:
+def save_ckpt(net, name):
     path = os.path.join(CKPT_DIR, f"{name}.pth")
     torch.save(net.state_dict(), path)
     logger.info(f"Checkpoint saved: {path}")
 
-
-def load_ckpt(name: str, device: str = DEVICE) -> torch.nn.Module:
+def load_ckpt(name, device=DEVICE):
     path = os.path.join(CKPT_DIR, f"{name}.pth")
-    net = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=1).to(device)
+    net = ValueNetwork().to(device)
     net.load_state_dict(torch.load(path, map_location=device))
     net.eval()
     logger.info(f"Checkpoint loaded: {path}")
     return net
 
-# ── DATASET ──────────────────────────────────────────────────────────
+# Dataset for replay buffer
 class ChessValueDataset(Dataset):
-    """Replay‑buffer dataset. Each item is (state_tensor, z_scalar)."""
-
+    """(state_tensor, return) pairs for training value net."""
     def __init__(self, buffer: List[Tuple[torch.Tensor, float]]):
         self.items = buffer
-
     def __len__(self):
         return len(self.items)
-
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx):
         st_t, z = self.items[idx]
-        z = max(-Z_MAX, min(Z_MAX, z))
-        z = z / Z_MAX
-        return st_t.float(), torch.tensor(z, dtype=torch.float32)
+        # clamp and normalize return
+        z = max(-5.0, min(5.0, z)) / 5.0
+        return st_t.float(), torch.tensor(z)
 
-
-def value_loss_fn(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+def value_loss_fn(pred, target):
     return torch.nn.functional.mse_loss(pred, target)
 
-# ── DOMAIN‑SPECIFIC REWARD UTILS ─────────────────────────────────────
-
-def compute_white_black_rewards(phi_prev: float, phi_next: float, mover: int) -> Tuple[float, float]:
+# Reward utilities
+def compute_white_black_rewards(phi_prev, phi_next, mover):
     """
-    Shaped reward: potential‐based shaping + step‐cost, 
-    dal punto di vista di White (+1) e Black (-1).
+    Compute shaped reward:
+    - mover gets α(γφ'−φ)−step, opponent gets negative shaping.
     """
-    # Calcola il shaping: α[γ·φ(s') − φ(s)]
     shaping = ALPHA * (GAMMA * phi_next - phi_prev)
-
     if mover == 1:
-        # Se tocca a White, White riceve shaping meno step‐cost, Black riceve −shaping “puro”
         return shaping - STEP_COST, -shaping
     else:
-        # Se tocca a Black, Black riceve shaping meno step‐cost, White riceve −shaping “puro”
         return shaping, -shaping - STEP_COST
 
-
-
-def compute_material_potential(board: Tuple[Tuple[int, ...], ...]) -> float:
+def compute_material_potential(board):
+    """Sum piece values over board, ignore kings."""
     total = 0.0
     for row in board:
         for piece in row:
-            if piece == 0 or abs(piece) == 60000:  # ignore empty & king (constant value)
+            if piece == 0 or abs(piece) == 60000:
                 continue
             val = PIECE_VALUES.get(abs(piece), 1.0)
             total += math.copysign(val, piece)
     return total
 
-# ── SELF‑PLAY ────────────────────────────────────────────────────────
-
+# Self-play functions
 def self_play_wrapped(args):
-    """Wrapper to use in mp.Pool."""
+    """Multiprocessing wrapper for one self-play game."""
     net_train, net_other, play_as_white, seed = args
-    random.seed(seed)
-    torch.manual_seed(seed)
-
+    random.seed(seed); torch.manual_seed(seed)
     mcts_train = MCTS(net_train, iterations_MCTS, rng=random.Random(seed))
-    mcts_other = MCTS(net_other, iterations_MCTS, rng=random.Random(seed + 1))
+    mcts_other = MCTS(net_other, iterations_MCTS, rng=random.Random(seed+1))
+    return self_play_game(
+        mcts_train, mcts_other, collect_for_white=play_as_white
+    )
 
-    if play_as_white:
-        return self_play_game(mcts_train, mcts_other, collect_for_white=True)
-    else:
-        return self_play_game(mcts_other, mcts_train, collect_for_white=False)
-
-
-def self_play_game(mcts_white: MCTS, mcts_black: MCTS, collect_for_white: bool) -> List[Tuple[torch.Tensor, float]]:
-    """Plays one game.
-    Returns a list of (state_tensor, z_scalar) **only** for positions
-    where *our* network (the one we are training/evaluating) is to move.
-    `collect_for_white` indicates whether the training net is playing white.
+def self_play_game(mcts_w, mcts_b, collect_for_white):
     """
-
-    transitions: List[Tuple[torch.Tensor, float]] = []
+    Play one game, collect transitions (s, r) for the training side only,
+    then compute Monte-Carlo returns.
+    """
+    transitions = []
     game = GardnerMiniChessGame()
     state = MiniChessState(game.getInitBoard(), player=1, turns=0)
     phi_prev = compute_material_potential(state.board())
-
-    # ── PLAY THE GAME ───────────────────────────────────────────────
     for ply in range(MAX_TURNS):
         if state.is_terminal():
             break
-
-        mover = state.current_player()           # +1 white, -1 black *about to move*
-        mcts  = mcts_white if mover == 1 else mcts_black
-        tau   = 1.0 if ply < 50 else 0.0
-        move  = mcts.search(state, temperature=tau)
+        mover = state.current_player()
+        mcts = mcts_w if mover == 1 else mcts_b
+        tau = 1.0 if ply < 50 else 0.0
+        move = mcts.search(state, temperature=tau)
         next_state = state.next_state(move)
-
-        # shaped reward for the mover
         phi_next = compute_material_potential(next_state.board())
         r_w, r_b = compute_white_black_rewards(phi_prev, phi_next, mover)
-        r_self   = r_w if mover == 1 else r_b
-
-        # store transition *only* if it's our training side
+        r_self = r_w if mover == 1 else r_b
         if (collect_for_white and mover == 1) or (not collect_for_white and mover == -1):
             st_t = encode_state_as_tensor(state).cpu()
             transitions.append((st_t, r_self))
-
-        state, phi_prev = next_state, phi_next #aggiornamento 
-
-    # ── GAME RESULT FROM EACH SIDE'S PERSPECTIVE ───────────────────
-    result_white = state.result()          # +1 white win | 0 draw | -1 white lose
-    result_self  = result_white if collect_for_white else -result_white
+        state, phi_prev = next_state, phi_next
+    result = state.result()
+    result_self = result if collect_for_white else -result
     transitions.append((None, result_self))
-    # ── RETURN (s, z) WITH MONTE‑CARLO RETURNS ─────────────────────
-    data: List[Tuple[torch.Tensor, float]] = []
+    # Back-propagate returns
+    data = []
     cum_r = 0.0
     for st_t, r in reversed(transitions):
         cum_r = r + GAMMA * cum_r
-        # Attenzione: se st_t is None significa che è la transizione terminale
         if st_t is not None:
             data.append((st_t, cum_r))
     return data
 
-# ── DETERMINISTIC PLAY FOR ARENA ────────────────────────────────────
-
-def play_det(mcts_w: MCTS, mcts_b: MCTS) -> int:
+# Deterministic evaluation for arena
+def play_det(mcts_w, mcts_b):
     game = GardnerMiniChessGame()
     state = MiniChessState(game.getInitBoard(), player=1, turns=0)
     while not state.is_terminal():
-        mcts = mcts_w if state.current_player() == 1 else mcts_b
-        move = mcts.search(state, temperature=0.0)
-        state = state.next_state(move)
-    return state.result()   # +1 white win | 0 draw | -1 white lose
+        mcts = mcts_w if state.current_player()==1 else mcts_b
+        state = state.next_state(mcts.search(state, temperature=0.0))
+    return state.result()
 
-
-def arena(current_net: torch.nn.Module, best_net: torch.nn.Module, games: int = arena_games):
-    """Returns win‑rate, wins, draws, losses from the POV of `current_net`."""
+def arena(current_net, best_net, games=arena_games):
+    """Run half games as white/black, count W/D/L for current_net."""
     wins = draws = 0
     mcts_curr = MCTS(current_net, iterations_MCTS, rng=random.Random(1))
     mcts_best = MCTS(best_net,   iterations_MCTS, rng=random.Random(2))
-
-    # current_net as white
-    for _ in range(games // 2):
+    for _ in range(games//2):
         res = play_det(mcts_curr, mcts_best)
-        if res == 1:
-            wins += 1
-        elif res == REWARD_DRAW:
-            draws += 1
-
-    # current_net as black
-    for _ in range(games // 2):
+        if res==1: wins+=1
+        elif res==0: draws+=1
+    for _ in range(games//2):
         res = play_det(mcts_best, mcts_curr)
-        if res == -1:
-            wins += 1
-        elif res == REWARD_DRAW:
-            draws += 1
-
+        if res==-1: wins+=1
+        elif res==0: draws+=1
     losses = games - wins - draws
-    logger.info(f"Arena: W/D/L = {wins}/{draws}/{losses}")
-    win_rate = wins / (games - draws) if games != draws else 0.0
+    win_rate = wins/(games-draws) if games!=draws else 0.0
+    logger.info(f"Arena W/D/L={wins}/{draws}/{losses}")
     return win_rate, wins, draws, losses
 
-# ── TRAIN LOOP FOR VALUE‑NET ────────────────────────────────────────
-
-def train_value_net(value_net: torch.nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer, num_epochs: int = num_epochs, device: torch.device = DEVICE) -> float:
-    value_net.to(device)
-    value_net.train()
+# Training loop
+def train_value_net(value_net, train_loader, optimizer, num_epochs, device):
+    """
+    Standard PyTorch training:
+    - mixed-precision with GradScaler
+    - gradient clipping to norm 3.0
+    - log average loss per epoch
+    """
+    value_net.to(device).train()
     scaler = GradScaler()
-
     for epoch in range(num_epochs):
         total_loss = 0.0
-        for states_batch, targets_batch in train_loader:
-            states_batch = states_batch.to(device, non_blocking=True)
-            targets_batch = targets_batch.to(device, non_blocking=True)
-
+        for states, targets in train_loader:
+            states, targets = states.to(device), targets.to(device)
             optimizer.zero_grad()
             with autocast():
-                preds = value_net(states_batch).squeeze(-1)   # shape [B]
-                loss = value_loss_fn(preds, targets_batch)
+                preds = value_net(states)
+                loss = value_loss_fn(preds, targets)
             scaler.scale(loss).backward()
-            if torch.cuda.is_available():      # evita warning su CPU
+            if torch.cuda.is_available():
                 scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(value_net.parameters(), 3.0)
-            scaler.step(optimizer)
-            scaler.update()
-            total_loss += loss.item() * states_batch.size(0)
+            scaler.step(optimizer); scaler.update()
+            total_loss += loss.item() * states.size(0)
         avg_loss = total_loss / len(train_loader.dataset)
         logger.info(f"Epoch {epoch+1}/{num_epochs} - Loss: {avg_loss:.5f}")
     return avg_loss
 
-# ── METRICS CSV / TRUE‑SKILL ────────────────────────────────────────
+# Metrics CSV & TrueSkill setup
 metrics_path = os.path.join(this_dir, "metrics.csv")
 if not os.path.exists(metrics_path):
-    with open(metrics_path, "w", newline="") as f:
+    with open(metrics_path,"w",newline="") as f:
         csv.writer(f).writerow([
-            "cycle", "wins", "draws", "losses", "elo_current", "elo_best", "avg_loss", "avg_moves", "avg_nodes"
+            "cycle","wins","draws","losses",
+            "elo_curr","elo_best","avg_loss","avg_moves","avg_nodes"
         ])
 
 import trueskill
-_ts_env = trueskill.TrueSkill(draw_probability=0.05)
-elo_current = _ts_env.Rating()
-elo_best    = _ts_env.Rating()
+_ts = trueskill.TrueSkill(draw_probability=0.05)
+elo_current = _ts.Rating(); elo_best = _ts.Rating()
 
-# ── MAIN TRAINING LOOP ──────────────────────────────────────────────
+# Main entry
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
-    torch.manual_seed(0)
-    random.seed(0)
+    torch.manual_seed(0); random.seed(0)
 
-    # ── INITIALISE NETS & BUFFER ────────────────────────────────────
-    replay_buffer: List[Tuple[torch.Tensor, float]] = []
-
-    best_net    = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=1).to(DEVICE)
+    # Initialise networks & buffer
+    replay_buffer = []
+    best_net = ValueNetwork().to(DEVICE)
     save_ckpt(best_net, "best_0")
-    current_net = ValueNetwork(hidden_channels=HIDDEN_CHANNELS, output_dim=1).to(DEVICE)
+    current_net = ValueNetwork().to(DEVICE)
+    optimizer = torch.optim.AdamW(current_net.parameters(),
+                                  lr=learning_rate, weight_decay=weight_decay)
 
-    optimizer = torch.optim.AdamW(current_net.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    logger.info("CONFIG | STEP_COST=%s | cycles=%s | iterations_MCTS=%s",
+                STEP_COST, num_cycles, iterations_MCTS)
 
-    logger.info(
-        "CONFIG | STEP_COST=%s | num_cycles=%s | arena_games=%s | "
-        "learning_rate=%s | batch_size=%s | HIDDEN_CHANNELS=%s | REWARD_DRAW=%s | iterations_MCTS=%s",
-        STEP_COST, num_cycles, arena_games,
-        learning_rate, batch_size, HIDDEN_CHANNELS, REWARD_DRAW, iterations_MCTS
-    )
-
-    # ── CYCLES ──────────────────────────────────────────────────────
-    for cycle in range(1, num_cycles + 1):
-        torch.manual_seed(cycle)
-        random.seed(cycle)
+    for cycle in range(1, num_cycles+1):
+        torch.manual_seed(cycle); random.seed(cycle)
         logger.info(f"===== CYCLE {cycle} =====")
-
-        # ── SELF‑PLAY PARALLEL GAMES ────────────────────────────────
-        seeds = [cycle * 100 + i for i in range(games_per_cycle)]
-        cpu_curr = current_net.to("cpu")
-        cpu_best = best_net.to("cpu")
-
-        args = []
-        for i, s in enumerate(seeds):
-            if i % 2 == 0:
-                args.append((cpu_curr, cpu_best, True, s))   # training net plays WHITE
-            else:
-                args.append((cpu_best, cpu_curr, False, s))  # training net plays BLACK
-
-        with mp.Pool(processes=min(4, mp.cpu_count())) as pool:
+        # Prepare self-play args & launch parallel games
+        seeds = [cycle*100+i for i in range(games_per_cycle)]
+        cpu_curr, cpu_best = current_net.to("cpu"), best_net.to("cpu")
+        args = [(cpu_curr, cpu_best, i%2==0, s) for i,s in enumerate(seeds)]
+        with mp.Pool(min(4, mp.cpu_count())) as pool:
             results = pool.map(self_play_wrapped, args)
+        # Back to GPU
+        current_net.to(DEVICE); best_net.to(DEVICE)
 
-        # back to GPU
-        current_net.to(DEVICE)
-        best_net.to(DEVICE)
-
-        # ── FLATTEN BUFFER & OPTIONALLY SUBSAMPLE DRAWS ─────────────
+        # Flatten and subsample transitions to avoid excess draws
         games_transitions: List[List[Tuple[torch.Tensor, float]]] = results
 
         draw_games     = [g for g in games_transitions if g and g[-1][1] == REWARD_DRAW]
@@ -347,11 +281,11 @@ if __name__ == "__main__":
 
         # update Elo ratings
         if w > l:
-            elo_current, elo_best = _ts_env.rate_1vs1(elo_current, elo_best)
+            elo_current, elo_best = _ts.rate_1vs1(elo_current, elo_best)
         elif w < l:
-            elo_best, elo_current = _ts_env.rate_1vs1(elo_best, elo_current)
+            elo_best, elo_current = _ts.rate_1vs1(elo_best, elo_current)
         else:
-            elo_current, elo_best = _ts_env.rate_1vs1(elo_current, elo_best, drawn=True)
+            elo_current, elo_best = _ts.rate_1vs1(elo_current, elo_best, drawn=True)
 
         # naïve stats (placeholder)
         avg_moves = sum(len(g) for g in games_transitions) / len(games_transitions)

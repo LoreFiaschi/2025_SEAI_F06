@@ -1,0 +1,515 @@
+\documentclass{report}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\begin{document}
+
+\title{A Chess Engine Using MCTS with a Deep Value Network}
+\author{Lorenzo Vittori \\ Matteo Comini}
+\date{Academic Year 2024/2025}
+\maketitle
+
+\tableofcontents
+
+\chapter{Introduction}
+\section{Background and Motivation}
+Reinforcement Learning (RL) has emerged as a powerful framework for enabling agents to learn complex decision‐making strategies through interaction with uncertain or partially observable environments. By combining trial‐and‐error learning with function approximation, modern RL methods can tackle tasks ranging from simple grid‐world navigation to board games and robotic control.
+
+In this project, we explore the application of RL in the context of game playing, specifically focusing on chess. Chess serves as an excellent domain for studying AI and RL due to its rich strategic complexity and well-defined rules. We aim to develop a chess engine that can compete at a high level using Monte Carlo Tree Search (MCTS) combined with a deep value network.
+
+\section{Project Overview}
+This report presents two main projects: the first involves developing a Deep Q-Network (DQN) agent for the Frozen Lake environment, and the second focuses on creating a MiniChess engine using MCTS with a deep value network.
+
+In the Frozen Lake project, we design and train a DQN that learns to navigate the Frozen Lake environment, a stochastic grid-world, by approximating the optimal action–value function. The agent learns through trial and error, receiving rewards for reaching the goal and penalties for falling into holes. We also integrate MCTS with the trained DQN to enhance the agent's performance by enabling look-ahead planning.
+
+The MiniChess engine project involves developing a chess engine for Gardner’s 5×5 variant of chess. Inspired by the AlphaZero paradigm, we integrate MCTS with a deep value network that evaluates board positions. The neural network provides fast, informed leaf evaluations during the MCTS search, drastically reducing the need for random rollouts and enabling competitive play with limited computational resources.
+
+\section{Report Structure}
+The report is structured as follows: After this introduction, Chapter 2 describes the Frozen Lake environment and the RL approach used to train the agent, including details on the DQN architecture, training pipeline, and MCTS integration. Chapter 3 presents the MiniChess engine, detailing the problem description, algorithmic approach, including MCTS and value network integration, frameworks and dependencies, engine architecture, and results. Chapter 4 discusses the issues encountered during the project and the solutions implemented. Finally, Chapter 5 concludes the report, summarizing the key findings and suggesting directions for future work.
+
+\chapter{Frozen Lake}
+\section{Environment and Problem Description}
+The \emph{Frozen Lake} environment is formulated as a finite-horizon grid-world Markov decision process (MDP). The agent starts on the upper-left corner $S$ and aims to reach the goal tile $G$ situated on the opposite corner while avoiding holes $H$. Ordinary tiles $F$ are safe, but when the map is declared \emph{slippery} every intended move is perturbed with probability $\tfrac{1}{3}$ of veering $\pm 90^{\circ}$, thus introducing stochastic transitions.
+ 
+\begin{figure}[h!]
+    \centering
+\includegraphics[width=0.3\linewidth]{image.png}
+    \caption{Enter Caption}
+    \label{fig:enter-label}
+\end{figure}
+ 
+\begin{itemize}
+  \item \textbf{State space} — Each grid position is encoded as a single integer $s = \text{row} \times n_{\text{col}} + \text{col}$, yielding the discrete observation space $\mathcal{S}=\{0, \dots, n_S-1\}$ with $n_S = n_{\text{row}}\, n_{\text{col}}$.
+  \item \textbf{Action space} — Four actions \texttt{LEFT}, \texttt{DOWN}, \texttt{RIGHT}, \texttt{UP} constitute $\mathcal{A}$.
+  \item \textbf{Map generation} — A helper \texttt{generate\_random\_map} draws an $n\times n$ binary matrix, fixes $S$ and $G$, and repeatedly samples until a depth‑first search (DFS) verifies that at least one viable path exists.
+  \item \textbf{Transition tensor} $P(s,a)$ — During construction the environment enumerates every pair $(s,a)$ (including slip branches) once; subsequent calls to \texttt{step} reduce to an $\mathcal{O}(1)$ table lookup.
+\end{itemize}
+ 
+Episodes terminate upon reaching $G$, falling into $H$, or after \texttt{MAX\_EPISODE\_STEPS} interactions.
+ 
+\section{Reinforcement Learning Approach}
+Learning proceeds in two separate phases:
+\begin{enumerate}
+  \item \textbf{Offline value learning} — a Deep Q‑Network (DQN) approximates the optimal action–value function $Q_{\theta}$ from gameplay experience gathered under an $\varepsilon$‑greedy policy.
+  \item \textbf{Online planning} — at evaluation time the frozen DQN is embedded inside a Monte‑Carlo Tree Search (MCTS) that performs look‑ahead from the current root state before every move.
+\end{enumerate}
+ 
+This \emph{value + search} split mirrors the AlphaZero template while remaining computationally lightweight for a toy grid world.
+ 
+\subsection{Reward shaping}
+To speed up convergence the environment returns dense rewards; constants are centralised in \texttt{config.py}:
+ 
+\begin{table}[h!]
+  \centering
+  \begin{tabular}{l r}
+    \toprule
+    Event & Reward \\
+    \midrule
+    Goal reached & $+100$ \\
+    Fall into hole & $-100$ \\
+    Any other step & $-1$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{Reward shaping constants.}
+  \label{tab:rewards}
+\end{table}
+ 
+\subsection{Deep Q‑Network}
+The Q‑function $Q_{\theta}(s,a)$ is parameterised by a fully‑connected network defined in \texttt{deep\_q\_learning.py}:
+ 
+\[
+\text{one\_hot}(s) \;\rightarrow\; \text{Linear}(128) \;\rightarrow\; \text{ReLU} \;\rightarrow\; \text{Linear}(128) \;\rightarrow\; \text{ReLU} \;\rightarrow\; \text{Linear}(|\mathcal{A}|).
+\]
+ 
+\paragraph{Experience replay \& target network} A buffer of 10\,000 transitions supplies IID minibatches (size 64). Parameters of an auxiliary target network are copied every 200 optimiser updates.
+ 
+\paragraph{Optimisation} The loss is the smooth $L_1$ distance between current predictions and bootstrapped targets
+\[
+  y = r + \gamma \max_{a'} Q_{\theta^{-}}(s',a'),
+\]
+with Adam (learning rate $10^{-3}$) and discount $\gamma = 0.99$.
+ 
+\paragraph{Exploration} Actions follow an $\varepsilon$‑greedy policy with a decaying schedule
+\[
+  \varepsilon_t = \varepsilon_{\text{end}} + (\varepsilon_{\text{start}}-\varepsilon_{\text{end}}) e^{-t/\tau}, \quad \varepsilon_{\text{start}}=0.8, \; \varepsilon_{\text{end}}=0.01, \; \tau=500.
+\]
+ 
+\subsection{Training pipeline}
+\begin{enumerate}
+  \item \textbf{Initialisation} Fix an 8$\times$8 random map with seed~48 for full reproducibility.
+  \item \textbf{Collect–update loop} During each episode the agent selects an action, stores the transition, and—once the buffer holds 500 samples—performs one gradient step per environment step.
+  \item \textbf{Checkpointing} Policy weights are periodically saved to disk and synchronised to the target network.
+\end{enumerate}
+ 
+\subsection{Monte‑Carlo Tree Search executor}
+At evaluation time function \texttt{mcts()} uses the exact model extracted once from \texttt{env.P}.
+ 
+\begin{description}
+  \item[Selection] Children maximise
+  \[
+  U(s,a)=\frac{Q}{N_{sa}} + c\sqrt{\frac{\ln N_s}{N_{sa}}}, \quad c=1.0.
+  \]
+  \item[Expansion] The first unvisited node along the path is added to the tree.
+  \item[Roll‑out] From the leaf state the DQN’s \texttt{greedy\_action} is simulated up to \texttt{ROLLOUT\_DEPTH = 50}; if unavailable, the policy defaults to uniform random.
+  \item[Back‑propagation] Returns are discounted by $\gamma^{t}$ and accumulated along the path.
+  \item[Inference] After \texttt{NUM\_SIMULATIONS} trajectories (typically a few hundred) the action with the highest visit count is executed; normalised counts form a stochastic policy.
+\end{description}
+ 
+\subsection{Performance}
+On a deterministic $4\times4$ board the hybrid DQN+MCTS agent achieves nearly $100\%$ success, usually in the optimal number of moves. On slippery $8\times6$ layouts it exceeds $95\%$ while keeping per‑move search latency in the millisecond range, and no planning overhead is incurred during DQN training.
+ 
+\section{Code Structure and Logic}
+\begin{center}
+\begin{tabular}{@{}p{4cm}p{8.5cm}@{}}
+  \toprule
+  \textbf{Module / Script} & \textbf{Responsibility} \\
+  \midrule
+  \texttt{frozen\_lake.py}   & Environment implementation, map generator, Gym registration (discrete spaces, reward shaping, multiple render back‑ends). \\
+  \texttt{deep\_q\_learning.py} & DQN architecture, replay buffer, $\varepsilon$‑greedy policy; exposes \texttt{choose\_action}/\texttt{greedy\_action}. \\
+  \texttt{q\_learning.py}     & Tabular baseline compatible with the same planner interfaces. \\
+  \texttt{mcts\_module.py}    & Exact‑model Monte‑Carlo Tree Search using UCT; no environment calls inside simulations. \\
+  \texttt{main.py}            & End‑to‑end experiment: trains agents then evaluates via MCTS (seeded for reproducibility). \\
+  \texttt{new\_main.py}       & Live visualisation of the search tree beside gameplay (matplotlib animation). \\
+  \bottomrule
+\end{tabular}
+\end{center}
+ 
+All constants reside in a dedicated \texttt{config.py} so alternative reward schedules or hyper‑parameters can be changed without touching the algorithmic code.
+
+\chapter{MiniChess Engine}
+
+\section{Problem Description}
+In Gardner’s 5×5 Minichess (on the leftmost five columns of a standard board), all standard pieces (rook, knight, bishop, queen, king, and pawns) are placed on a 5×5 board. This variant has a much smaller state space than full chess but still retains strategic complexity. The engine’s goal is to choose strong moves in this game.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.5\linewidth]{foto.png}
+    \caption{Image description.}
+    \label{fig:foto}
+\end{figure}
+
+\section{Algorithmic Approach}
+The MiniChess engine is built on Monte Carlo Tree Search (MCTS) combined with a deep neural network value function. In practice, the code performs the following MCTS steps each time it needs to pick a move (see \texttt{mcts\_pt.py}):
+
+\begin{enumerate}
+  \item \textbf{Selection:} Starting from the root node (current position), recursively select child moves according to a PUCT policy (\texttt{\_Node.ucb1} in \texttt{mcts\_pt.py}) until reaching a leaf.
+  \item \textbf{Expansion:} If the leaf node is non-terminal and has untried children, expand the tree by adding one child node via \texttt{\_Node.expand}.
+  \item \textbf{Evaluation:} Evaluate the new node by querying the deep value network (in \texttt{value\_network.py}) to estimate $V(s)$. Encoding is done in \texttt{encode\_state\_as\_tensor} (see \texttt{mcts\_pt.py}).
+  \item \textbf{Backpropagation:} Propagate the obtained scalar value up the tree, updating visit counts and value estimates of ancestor nodes.
+\end{enumerate}
+
+\subsection{Reward shaping in MiniChess}
+To speed up learning in self-play, we apply a potential-based shaping with a step penalty (see \texttt{config.py}):
+\begin{itemize}
+  \item Calculation of the material potential $\phi(s)$ in \texttt{train.py} via \texttt{compute\_material\_potential}, which uses the values in \texttt{PIECE\_VALUES}.
+  \item Shaped reward for the player to move $m$:
+    \[
+      r_{m} \;=\;\alpha\bigl(\gamma\,\phi(s') - \phi(s)\bigr)\;-\;\mathrm{STEP\_COST},
+    \]
+    and for the opponent:
+    \[
+      r_{\text{opp}} \;=\; -\,\alpha\bigl(\gamma\,\phi(s') - \phi(s)\bigr).
+    \]
+    (See \texttt{compute\_white\_black\_rewards} in \texttt{train.py}.)
+\end{itemize}
+
+\section{Frameworks and Dependencies}
+The training pipeline in \texttt{train.py}, the MCTS engine in \texttt{mcts\_pt.py}, the network definition in \texttt{value\_network.py}, and the state representation in \texttt{minichess\_state.py} make use of various libraries, divided here into three categories:  
+\begin{enumerate}
+  \item \textbf{Python Standard Libraries}
+  \item \textbf{Third-Party Libraries}
+  \item \textbf{Local Project Modules}
+\end{enumerate}
+
+\subsection*{1. Python Standard Libraries}
+\begin{itemize}
+  \item \texttt{os}, \texttt{sys}: path management, dynamic insertion into \texttt{sys.path}, and runtime environment configuration.
+  \item \texttt{math}, \texttt{random}: basic mathematical operations and random number generation for initialization and exploration strategies.
+  \item \texttt{logging}, \texttt{csv}: structured logging of training events and saving results (metrics, losses, parameters).
+  \item \texttt{collections.Counter}: counting occurrences of events (e.g., win/loss statistics) during training.
+  \item \texttt{typing} (\texttt{List}, \texttt{Tuple}, \texttt{Optional}): annotations to improve readability and static type checking.
+  \item \texttt{dataclasses.dataclass}: simplifies the definition of data classes (used in \texttt{mcts\_pt.py} to structure nodes).
+\end{itemize}
+
+\subsection*{2. Third-Party Libraries}
+\begin{itemize}
+  \item \textbf{PyTorch} (\texttt{torch}, \texttt{torch.nn}, \texttt{torch.cuda.amp}, \texttt{torch.multiprocessing}, \texttt{torch.utils.data}):
+    \begin{itemize}
+      \item \texttt{torch}: core for tensors and GPU/CPU operations.
+      \item \texttt{torch.nn} / \texttt{torch.nn.functional} (\texttt{Conv2d}, \texttt{BatchNorm2d}, \texttt{Linear}, \texttt{LeakyReLU}): defines the value network architecture.
+      \item \texttt{torch.cuda.amp} (\texttt{GradScaler}, \texttt{autocast}): enables mixed precision training to speed up training and reduce memory usage.
+      \item \texttt{torch.utils.data.Dataset}, \texttt{DataLoader}: implements the replay buffer as a dataset and handles automatic batching.
+      \item \texttt{torch.multiprocessing}: parallelism for data generation via self-play across multiple processes.
+    \end{itemize}
+  \item \textbf{NumPy} (\texttt{numpy}): efficient array manipulation for state encoding into tensors.
+\end{itemize}
+
+\subsection*{3. Local Project Modules}
+\begin{itemize}
+  \item \textbf{config.py}  
+    Game settings and global parameters: defines \texttt{PIECE\_VALUES}, \texttt{STEP\_COST}, \texttt{ALPHA}, \texttt{GAMMA}, \texttt{INPUT\_CHANNELS}, and other training and MCTS constants.
+
+  \item \textbf{games.gardner.minichess\_state.MiniChessState}  
+    Immutable representation of the game state. Main methods:
+    \begin{itemize}
+      \item \texttt{board()}, \texttt{current\_player()}, \texttt{get\_legal\_moves()}, \texttt{next\_state()}, \texttt{is\_terminal()}.
+      \item Definition of \texttt{Move = Tuple[int,int,int]} (piece, src\_idx, dst\_idx).
+    \end{itemize}
+
+  \item \textbf{games.gardner.GardnerMiniChessLogic}  
+    Rules and helpers:
+    \begin{itemize}
+      \item Calculation of legal moves, terminality checks, captures, castling, promotion.
+      \item \texttt{move\_to\_algebraic()}, \texttt{idx\_to\_square()}.
+    \end{itemize}
+
+  \item \textbf{games.gardner.mcts\_pt.MCTS}  
+    PUCT-MCTS with batching: \texttt{search()}, \texttt{\_select()}, \texttt{\_enqueue()}, \texttt{\_flush()}, \texttt{\_select\_move()}.
+
+  \item \textbf{games.gardner.value\_network.ValueNetwork}  
+    CNN architecture for $V(s)$: three convolutional layers, batch-norm, LeakyReLU, flatten, and fully-connected layers.
+
+  \item \textbf{games.gardner.ChessFunctions}  
+    GUI and demo in Pygame: board drawing, input handling, \texttt{demo.py}, \texttt{demo\_dual.py}.
+
+  \item \textbf{torch.multiprocessing} \& TrueSkill  
+    Parallel self-play and Elo evaluations; metrics saved in \texttt{metrics.csv}.
+\end{itemize}
+
+\section{Engine Architecture}
+Below are detailed descriptions of the main modules of the MiniChess engine. Each subsection reports the role of the file, the most relevant classes and functions, as well as the overall logical flow of each component.
+
+\subsection{minichess\_state.py}
+\label{sec:minichess_state}
+This module encapsulates the representation of the game state and provides the fundamental operations to handle transitions and query terminal conditions.
+
+\begin{itemize}
+  \item \textbf{Class \texttt{MiniChessState}}:
+     \textbf{Main Methods}:
+        \begin{description}
+          \item[\texttt{board(self) -> List[List[int]]}] Returns a copy (or view) of the current board, already oriented with respect to the value network’s perspective (White always “at the bottom”).  
+          \item[\texttt{current\_player(self) -> int}] Returns the player to move (+1 White, -1 Black).
+          \item[\texttt{get\_legal\_moves(self, player: int) -> List[Move]}]  
+            Computes and returns the list of legal moves for the specified player (usually \texttt{self.\_player}). The \texttt{Move} class encapsulates:
+            \begin{itemize}
+              \item starting square (row, column),
+              \item destination square (row, column),
+              \item possible pawn promotion,
+              \item flags for castling or en passant capture.
+            \end{itemize}
+          \item[\texttt{next\_state(self, move: Move) -> MiniChessState}]  
+            Applies the move to the current state and returns a new \texttt{MiniChessState} object updated. Internally updates:
+            \begin{itemize}
+              \item \texttt{\_board} by modifying piece placements,
+              \item \texttt{\_player} (flips sign),
+              \item \texttt{\_turns} incremented by 1,
+              \item \texttt{\_repetition\_count} checking if the new configuration has been repeated.
+            \end{itemize}
+          \item[\texttt{is\_terminal(self) -> bool}]  
+            Checks if the position is terminal (checkmate, draw by repetition, draw by stalemate, maximum turn limit reached). 
+        \end{description}
+      \item \textbf{Design Notes}:
+        \begin{itemize}
+          \item The class is immutable once initialized: every \texttt{apply\_move} generates a new object.
+          \item Internally, utility functions (e.g., castling or promotion checks) are partly delegated to \texttt{GardnerMiniChessLogic.py}; the part in \texttt{minichess\_state.py} is responsible for combining that information into a form suitable for the MCTS engine and the value network.
+        \end{itemize}
+    \end{itemize}
+
+\subsection{mcts\_pt.py}
+\label{sec:mcts_pt}
+This module implements a PUCT-based Monte Carlo Tree Search with a deep value network.
+
+\subsubsection{Data Structures: \texttt{\_Node}}
+The \texttt{\_Node} class (annotated with \texttt{@dataclass}) represents a tree node:
+\begin{itemize}
+  \item \texttt{state: MiniChessState} — game state at this node.
+  \item \texttt{parent: Optional[\_Node]} — reference to parent node.
+  \item \texttt{move: Optional[Move]} — move applied to reach this node.
+  \item \texttt{wins: float} — cumulative value from simulations.
+  \item \texttt{visits: int} — number of visits.
+  \item \texttt{children: List[\_Node]} — expanded child nodes.
+  \item \texttt{untried\_moves: List[Move]} — legal moves not yet explored.
+\end{itemize}
+
+\subsubsection{Core Class: \texttt{MCTS}}
+\begin{description}
+  \item[\texttt{search(self, root\_state) $\to$ Move}] 
+    Executes \texttt{num\_sims} iterations of the MCTS loop:
+    \begin{enumerate}
+      \item Initialize root: \texttt{root = \_Node(root\_state, None, None)}.
+      \item Repeat:
+        \begin{enumerate}
+          \item \emph{Selection}: descend with \texttt{\_select()} until a leaf with untried moves.
+          \item \emph{Expansion}: pick one move from \texttt{leaf.untried\_moves}, apply it, and add a child node for the new state.
+          \item \emph{Evaluation}: use the deep value network to estimate the value of the new node.
+          \item \emph{Backpropagation}: propagate the value up the tree, updating wins and visits counts.
+        \end{enumerate}
+    \end{enumerate}
+\end{description}
+ 
+\subsection{Operation Pipeline of \texttt{mcts\_pt.py}}
+\label{sec:mcts_pipeline}
+Below is a step-by-step description of how the \texttt{mcts\_pt.py} module operates during an MCTS search, faithful to the code implementation.
+
+\begin{enumerate}
+  \item \textbf{Initial call}: The agent invokes  
+    \[
+      \texttt{mcts = MCTS(...)}
+    \]
+    Here \texttt{root\_state} is a \texttt{MiniChessState} object representing the current board position.
+
+  \item \textbf{Encoding of the root state}:
+    \begin{itemize}
+      \item Inside \texttt{search()}, the root node is created:  
+        \[
+          \texttt{root = \_Node(root\_state, None, None).}
+        \]
+      \item The encoding function \texttt{encode\_state\_as\_tensor(root\_state)} is not invoked immediately: it is used only when terminal leaf nodes are encountered or during evaluation.
+    \end{itemize}
+
+  \item \textbf{Simulation loop (for \texttt{num\_sims} iterations)}:
+    \begin{enumerate}
+      \item \textbf{Selection} (\texttt{\_select(root)}):
+        \begin{itemize}
+          \item Start from \texttt{node = root} and recursively descend following the child that maximizes:
+            \[
+              U(s,a) = \frac{\text{wins}_{s,a}}{\text{visits}_{s,a}} + c_{\text{puct}} \,\sqrt{\frac{\ln(\text{node.visits})}{\text{visits}_{s,a}}}.
+            \]
+        \end{itemize}
+
+      \item \textbf{Expansion}:
+        \begin{itemize}
+          \item Extract an untried move:  
+          \item Apply \texttt{move} to \texttt{leaf.state}:  
+            \[
+              \texttt{next\_state} = \texttt{leaf.state.next\_state(move)}.
+            \]
+          \item Create the new child node:  
+            \[
+              \texttt{child = \_Node(next\_state, leaf, move)} 
+            \]  
+            and add \texttt{child} to \texttt{leaf.children}.
+        \end{itemize}
+
+      \item \textbf{Evaluation / Rollout}:
+            \begin{enumerate}
+              \item Invoke  
+                \[
+                  \texttt{tensor} = \texttt{encode\_state\_as\_tensor(child.state)}.
+                \]
+             \item Compute the value estimate with the network:
+                \[
+                  \texttt{value} = \texttt{value\_net(tensor).item()}.
+                \]
+            \end{enumerate}
+
+      \item \textbf{Backpropagation} (\texttt{backpropagate(child, value)}):
+        \begin{itemize}
+          \item Starting from \texttt{node = child}, move up to the root, updating for each node \texttt{n} in the path:
+            \[
+              \texttt{n.visits} \mathrel{+}= 1,
+              \quad
+              \texttt{n.wins} \mathrel{+}= 
+              \begin{cases}
+                \texttt{value}, & \text{if } current\_player() = player,\\
+                -\texttt{value}, & \text{otherwise}.
+              \end{cases}
+            \]
+          \item The sign of \texttt{value} is flipped alternately as we ascend the tree, because the player to move alternates.
+        \end{itemize}
+    \end{enumerate}
+
+  \item \textbf{Selecting the best move}:
+      If \texttt{temperature} == 0 (as in arena), selection is deterministic based on the ratio of wins to visits; otherwise, if \texttt{temperature} ≠ 0, a stochastic component is included to encourage exploration.
+\end{enumerate}
+
+This section rigorously describes the control flow in \texttt{mcts\_pt.py}, showing how the selection, expansion, evaluation, and backpropagation phases are managed for each simulation, up to the final choice of the most “visited” move from the root node.
+
+\subsection{value\_network.py}
+\label{sec:value_network}
+This module defines the architecture of the \textit{Value Network}, used both during self-play for MCTS node evaluations and during supervised training.
+
+\begin{itemize}
+  \item \textbf{Class \texttt{ValueNetwork(nn.Module)}}:
+      \item Method \texttt{forward(self, x: torch.Tensor) -> torch.Tensor}:
+        \begin{enumerate}
+          \item Applies \texttt{conv1}, then \texttt{bn1} and \texttt{LeakyReLU}.
+          \item Applies \texttt{conv2}, then \texttt{bn2} and \texttt{LeakyReLU}.
+          \item \texttt{x = x.view(-1, HIDDEN\_CHANNELS*5*5)} to flatten the tensors.
+          \item Applies \texttt{fc1}, \texttt{LeakyReLU}, and finally \texttt{fc2}.
+        \end{enumerate}
+      \item \textbf{Output}: returns a tensor of shape \((B,1)\), where \(B\) is the batch size.  
+    \end{itemize}
+
+\subsection{train.py}
+\label{sec:train_py}
+The \texttt{train.py} module manages the entire self-play pipeline and supervised training of the \textit{Value Network}. Below are the essential components and the overall flow:
+
+\begin{itemize}
+  \item \textbf{Internal utility functions}:
+    \begin{description}
+      \item[\texttt{self\_play\_game(value\_net: ValueNetwork)}]  
+        Runs a full self-play game:
+        \begin{enumerate}
+          \item Initializes \texttt{state = MiniChessState()} with the standard starting position.
+          \item Creates an instance of \texttt{MCTS} for each player (White and Black) using the same \texttt{value\_net}.
+          \item While \texttt{state} is not terminal:
+            \begin{itemize}
+              \item The current player calls \texttt{mcts.search(state)} to get the best move \(\hat{a}\).
+              \item Applies \(\hat{a}\) with \texttt{state = state.apply\_move(\hat{a})}.
+              \item Records \((\text{encode\_state\_as\_tensor}(state), \; z)\) where \(z\) is the target value:
+                \[
+                  z = 
+                  \begin{cases}
+                    +1, & \text{if White wins at the end}, \\
+                    -1, & \text{if Black wins}, \\
+                    Reward\_draw, & \text{draw}.
+                  \end{cases}
+                \]
+            \end{itemize}
+          \item At the end, it returns the list of pairs \((\text{state\_tensor}, z)\) generated during the game.
+        \end{enumerate}
+
+      \item[\texttt{train\_value\_network:}]  
+        Updates the network weights given a batch of samples:
+        \begin{enumerate}
+          \item Constructs a custom \texttt{Dataset} (\texttt{ChessValueDataset}) from \(\{(s_i, z_i)\}\), where each \texttt{s\_i} is a tensor \((C,5,5)\) and \(z_i \in [-1,1]\).
+          \item Initializes a \texttt{DataLoader} with a predefined \texttt{batch\_size} and \texttt{shuffle=True}.
+          \item For \texttt{epoch = 1 \dots EPOCHS}:
+            \begin{itemize}
+              \item Iterates over the \texttt{DataLoader}, fetching each batch \((X, Z)\):
+                \begin{itemize}
+                  \item \texttt{with autocast(): \(\hat{Z} = value\_net(X)\)} computes predictions in mixed precision.
+                  \item Computes the Mean Squared Error:
+                    \[
+                      \mathcal{L} = \frac{1}{|B|} \sum_{i \in B} (\hat{z}_i - z_i)^2.
+                    \]
+                \end{itemize}
+              \item Logs the average \texttt{loss} to \texttt{training.log}.
+            \end{itemize}
+        \end{enumerate}
+
+      \item[\texttt{main()}]
+        Overall execution plan:
+        \begin{enumerate}
+          \item Instantiates \texttt{ValueNetwork()} and moves it to \texttt{DEVICE}.
+          \item For \texttt{cycle = 1,\dots,NUM\_CYCLES}:
+            \begin{enumerate}
+              \item Launches 4 parallel processes (via \texttt{torch.multiprocessing}) each running  
+                    \texttt{NUM\_SELFPLAY\_GAMES}/\texttt{NUM\_SELFPLAY\_PROCS} self-play games using  
+                    \texttt{self\_play\_game(...)} and collecting lists of \((s_i, z_i)\).
+              \item Merges the collected data into a global set  
+                    \(\mathcal{D} = \bigcup \{(s_i, z_i)\}\).
+              \item Splits \(\mathcal{D}\) into batches and calls  
+                    \texttt{train\_value\_network(value\_net, batch\_D)} for each batch.
+              \item At the end of each cycle, evaluates the \emph{value net} in arena games  
+                    against the previous version: if \texttt{curr\_net} achieves at least 55\% wins,  
+                    updates \texttt{best\_net} and continues.
+            \end{enumerate}
+        \end{enumerate}
+    \end{description}
+
+  \item \textbf{Key Points}:
+    \begin{itemize}
+      \item The module unites data generation (self-play via MCTS) and network training in a continuous cycle, according to the “\textit{Play \(\rightarrow\) Collect Data \(\rightarrow\) Train \(\rightarrow\) Evaluate}” loop.
+      \item The use of \texttt{GradScaler} and \texttt{autocast} reduces GPU memory usage and speeds up training.
+      \item Synchronization of self-play processes occurs via shared queues in memory managed by \texttt{torch.multiprocessing}.
+    \end{itemize}
+\end{itemize}
+
+\chapter{Issues and Solutions}
+
+During the early stages of project development, the neural network was implemented with an architecture that included two separate outputs: one for estimating the state value from White’s perspective and one for Black’s. However, training results were unsatisfactory: the network could not learn stably nor converge to meaningful values.
+
+To address the problem, three distinct approaches were explored:
+
+\section{Hyperparameter Optimization}
+The first attempt involved exploring the space of configuration parameters. In particular, we varied:
+\begin{itemize}
+    \item the \textit{learning rate};
+    \item the number of episodes and epochs;
+    \item the rewards associated with pieces;
+    \item the number of MCTS simulations and other parameters in \texttt{config.py}.
+\end{itemize}
+Despite careful hyperparameter tuning, the network’s learning was still slow and unstable, especially during the arena matches against the previous model. In the logs, while the \textit{loss} decreased, there was no significant and consistent increase in wins.
+
+\section{Verification of Data Flow Correctness}
+The second approach involved a thorough code review to verify that:
+\begin{itemize}
+    \item data collection;
+    \item cumulative reward computation;
+    \item propagation of the value $V$ within MCTS;
+\end{itemize}
+were all implemented correctly. Since the network had two outputs, the interaction between the MCTS algorithm and the model was more complex. After careful inspection, no significant errors were found in the code. This confirmed that the issue did not lie in data collection logic or value propagation but rather in the model’s difficulty in learning effectively.
+
+\section{Network Architecture Reformulation}
+In the third attempt, we decided to simplify the network architecture by exploiting the fact that the value of a zero-sum game state can be represented by a single scalar output. The new network provides a single output $V(s)$, interpreted as the value from the perspective of the player to move. To make this formulation possible, each board state is rotated so that the active player is always White. In this way, the network is trained and predicts on consistently oriented states.
+
+This solution significantly improved training performance: the network became more stable and faster at learning, even with fewer training examples. Furthermore, comparing the results with the two-output model, we observed that the latter can learn correctly but only with a much larger number of examples and training cycles.
+
+\section{Conclusions}
+In summary, adopting a single-output representation with rotated boards yielded the best results in terms of learning speed and stability. This approach allowed us to simplify the network architecture and achieve better performance compared to the initial configurations.
+
+\chapter{Conclusion}
+This report presented two projects: a Reinforcement Learning agent for the Frozen Lake environment and a MiniChess engine using MCTS with a deep value network. The Frozen Lake agent successfully learned to navigate the environment using a DQN and achieved high success rates with the integration of MCTS. The MiniChess engine demonstrated the effectiveness of combining MCTS with a deep neural network for strategic game playing. Future work may include further optimization of the algorithms, exploration of alternative neural network architectures, and application to more complex game environments.
+
+\end{document}
