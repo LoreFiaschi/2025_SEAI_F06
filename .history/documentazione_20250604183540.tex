@@ -1,9 +1,7 @@
 \documentclass{report}
 \usepackage{amsmath}
-\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
-\usepackage{booktabs}
+\usepackage[margin=2cm]{geometry}
 \usepackage{graphicx}
-\usepackage{subcaption}
 \begin{document}
 
 \title{A Chess Engine Using MCTS with a Deep Value Network}
@@ -504,7 +502,7 @@ This script is designed as an educational tool to visualise how MCTS selects act
 \label{sec:results}
 
 This section compares four key training runs that highlight the impact of the
-architectural shift described in Section~\ref{sec:value_network}.  
+architectural shift described in Section~\ref{sec:architecture}.  
 Runs \textbf{29} and \textbf{31} use the \emph{legacy dual-head, 13-channel}
 network, whereas Runs \textbf{02} and \textbf{03} employ the new
 \emph{single-head, 12-channel} design with automatic board flipping.
