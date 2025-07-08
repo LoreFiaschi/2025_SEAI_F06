@@ -1,36 +1,56 @@
-# MiniChessMCTS
+# 🧠 MiniChessMCTS
 
-A **minimal yet complete** reference implementation of Monte‑Carlo Tree Search (MCTS) combined with a lightweight convolutional **value network** trained via self‑play reinforcement learning for *Gardner 5×5 Mini‑Chess*.
+A **minimal yet complete** implementation of Monte Carlo Tree Search (MCTS) combined with a lightweight convolutional **value network** trained through self-play reinforcement learning — built for *Gardner 5×5 Mini‑Chess*.
 
-## Highlights
+---
 
-* Pure‑Python rules & move generator – no external chess libraries.
-* PUCT‑style MCTS with batched neural evaluations (`mcts_pt.py`).
-* End‑to‑end self‑play RL pipeline in < 400 lines (`train.py`).
-* TrueSkill arena to keep only stronger checkpoints.
-* Play either against the default heuristic engine **or against any saved model checkpoint**.
-* Tiny CNN (\~6 M params) that runs comfortably on CPU or GPU.
+## 🚀 Features
 
-## Quick Start
+* ♟ **Pure Python** rule engine & move generator — no external chess libraries required.
+* 🔍 **PUCT-based MCTS** with batched neural evaluations (`mcts_pt.py`).
+* 🧠 **Self-play RL pipeline** in under 400 lines (`train.py`).
+* 🏆 **TrueSkill-based arena**: only stronger models survive.
+* 🎮 **Human vs AI** or **AI vs AI** play supported.
+* ⚡ **Tiny CNN (\~6M params)** runs smoothly on CPU/GPU.
 
-| Task                              | Command                                                                 |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| Play against the default engine   | `python ChessGame.py`                                                   |
-| Play against a **trained model**  | `python demo.py --ckpt checkpoints/best_50.pth`                         |
-| Watch AI vs AI (two models)       | `python demo_dual.py --ckpt_white best_10.pth --ckpt_black best_20.pth` |
-| Train from scratch (self‑play RL) | `python train.py --episodes 10000 --checkpoint_dir checkpoints/`        |
+---
 
-## Reinforcement Learning Pipeline
+## ⚡ Quick Start
 
-1. **Self‑play** – The current network plays both sides via MCTS‑PUCT, storing `(state, value)` pairs where *value* ∈ {‑1, 0, +1} is the final result from the perspective of the player to move.
-2. **Training** – After *N* games the value network is updated with mean‑squared error on the collected targets.
-3. **Evaluation** – The freshly trained model faces the previous best in a TrueSkill arena; if its rating is higher it becomes the new champion and its weights are checkpointed.
-4. The loop repeats until the episode or time budget is exhausted.
+| Task                           | Command                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| Play against default engine    | `python ChessGame.py`                                                   |
+| Play vs trained model          | `python demo.py --ckpt checkpoints/best_50.pth`                         |
+| Watch AI vs AI (2 models)      | `python demo_dual.py --ckpt_white best_10.pth --ckpt_black best_20.pth` |
+| Train from scratch (self-play) | `python train.py --episodes 10000 --checkpoint_dir checkpoints/`        |
 
-All of the above logic lives in `train.py`, with hyper‑parameters consolidated in `config.py`.
+---
 
-## Citation
+## 🧩 RL Pipeline Overview
 
-If you use this code, please cite:
+1. **Self-Play**
+   The current network plays both sides using MCTS‑PUCT, collecting `(state, value)` pairs. The *value* ∈ {‑1, 0, +1} reflects the game outcome for the current player.
 
-> Comini & Vittori, *A Study of MCTS for 5×5 Mini‑Chess*, SEAI‑NS‑RL 2025.
+2. **Training**
+   After *N* games, the value network is updated via mean squared error using the collected targets.
+
+3. **Evaluation**
+   The newly trained network competes against the current best using a TrueSkill arena. If it wins, it becomes the new best and is saved.
+
+4. **Repeat**
+   The loop continues until the episode/time budget is exhausted.
+
+> Core logic in `train.py`. Hyperparameters in `config.py`.
+
+---
+
+## 📄 Citation
+
+If you use this project in academic or research settings, please cite:
+
+> **Comini & Vittori**
+> *A Study of MCTS for 5×5 Mini‑Chess*, SEAI‑NS‑RL 2025.
+
+---
+
+Fammi sapere se vuoi anche i badge (e.g., Python version, license, etc.) o un link al paper se disponibile.
