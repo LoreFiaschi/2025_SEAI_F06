@@ -51,6 +51,3 @@ If you use this project in academic or research settings, please cite:
 > **Comini & Vittori**
 > *A Study of MCTS for 5×5 Mini‑Chess*, SEAI‑NS‑RL 2025.
 
----
-
-Fammi sapere se vuoi anche i badge (e.g., Python version, license, etc.) o un link al paper se disponibile.
